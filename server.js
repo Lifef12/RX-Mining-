@@ -39,6 +39,16 @@ const OFFICIAL_CHANNEL_URL = process.env.OFFICIAL_CHANNEL_URL || "https://t.me/o
 const PAYMENT_CHANNEL_URL = process.env.PAYMENT_CHANNEL_URL || "https://t.me/paymentc12";
 const TASK_CHANNEL = process.env.TASK_CHANNEL || "@officialchanelm";
 
+// Quest tasks: reward is given ONLY after Telegram confirms the user joined the channel
+// NOTE: the bot must be an ADMIN in both channels, otherwise getChatMember fails.
+const TASKS = {
+    official: { chat: TASK_CHANNEL, ghs: 0.02 },
+    payment:  { chat: process.env.PAYMENT_TASK_CHANNEL || '@paymentc12', ghs: 0.02 }
+};
+
+// Approved deposits/withdrawals are auto-posted here (bot must be ADMIN of this channel)
+const PAYMENT_POST_CHAT = process.env.PAYMENT_POST_CHAT || '@paymentc12';
+
 // Public URL of this service (used for Telegram webhook + admin link)
 const BASE_URL = String(
     process.env.WEBHOOK_BASE_URL ||
@@ -250,8 +260,14 @@ function trxPriceSync() {
     return 1;
 }
 
+// Quest (task) GHS bonus: permanent, never expires with the paid plan
+function taskBonusUsdPerDay(u) {
+    return Number(u.taskGhs || 0) * PAID_RATE_PER_GHS_USD;
+}
+
 function dailyUsdRate(u, now = Date.now()) {
-    return isPaidPlanActive(u, now) ? Number(u.ghs) * PAID_RATE_PER_GHS_USD : FREE_DAILY_USD;
+    const base = isPaidPlanActive(u, now) ? Number(u.ghs) * PAID_RATE_PER_GHS_USD : FREE_DAILY_USD;
+    return base + taskBonusUsdPerDay(u);
 }
 
 function accrueUsd(u, now = Date.now()) {
@@ -269,6 +285,8 @@ function accrueUsd(u, now = Date.now()) {
     if (now > cursor) {
         usd += ((now - cursor) / 1000) * (FREE_DAILY_USD / 86400);
     }
+    // task bonus runs for the whole period
+    usd += ((now - last) / 1000) * (taskBonusUsdPerDay(u) / 86400);
     return usd;
 }
 
@@ -358,6 +376,8 @@ const userSchema = new mongoose.Schema({
     planActive: { type: Boolean, default: true },
     planStartDate: { type: Number, default: 0 },
     planExpiryDate: { type: Number, default: 0 },
+    tasksDone: { type: [String], default: [] },
+    taskGhs: { type: Number, default: 0 },
     referredBy: { type: String, default: null },
     referrals: {
         level1: { type: Array, default: [] },
@@ -747,6 +767,54 @@ async function closeRequest(reqDoc, u, reqId) {
     }
 }
 
+// Public proof post in the payments channel when admin approves a request
+async function postToPaymentChannel(reqDoc, u) {
+    try {
+        if (!PAYMENT_POST_CHAT) return;
+        const name = esc(reqDoc.username || (u && u.username) || 'Miner');
+        const coin = esc(reqDoc.coin || reqDoc.coinSymbol || 'USDT (BEP-20)');
+        const amount = esc(reqAmountLabel(reqDoc));
+        let text;
+        if (reqDoc.type === 'deposit') {
+            text =
+`📥 <b>RX Mining | New Deposit Approved</b>
+
+👤 User: <b>${name}</b>
+🆔 ID: "${esc(reqDoc.userId)}"
+
+🪙 Coin: <b>${coin}</b>
+💰 Amount: <b>${amount}</b>
+💵 Value: ≈ ${esc(Number(reqDoc.usdtAmount || 1))} USDT
+
+🔗 Transaction Hash: ✅
+"<code>${esc(reqDoc.txHash)}</code>"
+
+⚡ Bot: @${esc(DEFAULT_BOT_USERNAME)}`;
+        } else if (reqDoc.type === 'withdraw') {
+            text =
+`🎉 <b>RX Mining | New Withdraw Processed!</b>
+
+👤 User: <b>${name}</b>
+🆔 ID: "${esc(reqDoc.userId)}"
+
+🪙 Coin: <b>${coin}</b>
+💰 Amount: <b>${amount}</b>
+💵 Value: ≈ ${esc(Number(reqDoc.usdValue || 0).toFixed(2))} USDT
+
+🔗 Address ✅
+"<code>${esc(reqDoc.address)}</code>"
+
+⚡ Bot: @${esc(DEFAULT_BOT_USERNAME)}`;
+        } else {
+            return;
+        }
+        const r = await sendTelegramMessage(PAYMENT_POST_CHAT, text);
+        if (!r || !r.ok) console.log('Payment channel post failed:', r && r.description);
+    } catch (e) {
+        console.log('postToPaymentChannel error:', e && e.message);
+    }
+}
+
 async function processRequest(reqId, action, tgMsgId = null) {
     const reqDoc = await PendingRequest.findOneAndDelete({ reqId });
     if (!reqDoc) return { ok: false, message: "Request already handled!" };
@@ -772,6 +840,9 @@ async function processRequest(reqId, action, tgMsgId = null) {
         const msgId = tgMsgId || reqDoc.adminMsgId;
         if (msgId && ADMIN_ID) {
             await editTelegramMessage(ADMIN_ID, msgId, adminRequestText(reqDoc, statusLine));
+        }
+        if (action === 'approve') {
+            await postToPaymentChannel(reqDoc, u);
         }
         return { ok: true, message: "Action executed successfully!" };
     } catch (err) {
@@ -830,7 +901,13 @@ async function registerReferral(user) {
                 refUser.referrals[key].push({ id: chatId, joinedDate: 'Active', joinedAt: Date.now(), bonusEarned: 0 });
                 refUser.markModified(`referrals.${key}`);
                 await refUser.save();
-                sendTelegramMessage(refUser.id, `🎁 <b>New Level ${lvl} Referral Joined!</b>\n${esc(user.username || 'Miner')} · ID: <code>${esc(chatId)}</code>`);
+                sendTelegramMessage(refUser.id,
+`🎉 <b>New Referral Joined Your Team !</b>
+👤 ${esc(user.username || 'Miner')}
+🆔 ID: <code>${esc(chatId)}</code>
+💰 Earn 3-Level Commission on Their Deposits!
+🥇 L1: 15% | 🥈 L2: 3% | 🥉 L3: 1%
+🔥 Invite More • Earn More!`);
             }
             currentRefId = refUser.referredBy ? String(refUser.referredBy) : null;
         }
@@ -1188,7 +1265,7 @@ app.get('/admin/dashboard', checkAdminAuth, async (req, res) => {
                     ${searchedUser ? `
                         <div class="user-details-box">
                             <p>👤 <b>User Name:</b> ${esc(searchedUser.username.startsWith('@') ? searchedUser.username : '@' + searchedUser.username)} | <b>ID:</b> <code>${esc(searchedUser.id)}</code></p>
-                            <p>💰 <b>Current Balance:</b> <span style="color:#f0b94d; font-weight:bold;">${searchedUser.balance.toFixed(4)}</span> <span style="color:#22c55e;">($${(searchedUser.balance * liveTrxPrice).toFixed(2)} USD)</span> | ⚡ <b>GHS Power:</b> ${searchedUser.ghs} GHS</p>
+                            <p>💰 <b>Current Balance:</b> <span style="color:#f0b94d; font-weight:bold;">${searchedUser.balance.toFixed(4)}</span> <span style="color:#22c55e;">($${(searchedUser.balance * liveTrxPrice).toFixed(2)} USD)</span> | ⚡ <b>GHS Power:</b> ${searchedUser.ghs} GHS | 🎯 <b>Task GHS:</b> ${Number(searchedUser.taskGhs || 0).toFixed(2)} (${esc((searchedUser.tasksDone || []).join(', ') || 'none')})</p>
                             <p>🚫 <b>Account Status:</b> ${searchedUser.isBanned ? '<span style="color:#ef4444; font-weight:bold;">BANNED</span>' : '<span style="color:#22c55e; font-weight:bold;">ACTIVE</span>'}</p>
                             <p>⚡ <b>Mining Plan Status:</b> ${searchedUser.planActive !== false && searchedUser.ghs > 0 ? '<span style="color:#22c55e; font-weight:bold;">ACTIVE (' + getPlanDaysFormat(searchedUser) + ')</span>' : '<span style="color:#ef4444; font-weight:bold;">DEACTIVATED / EXPIRED</span>'}</p>
                             <p>📥 <b>Total Approved Deposit:</b> <span style="color:#22c55e; font-weight:bold;">${userTotalDepositUsdt.toFixed(2)} USDT</span></p>
@@ -1505,6 +1582,9 @@ app.get('/api/user/:userId', requireTg, async (req, res) => {
 
     data.team = await getTeamStats(user);
 
+    data.tasksDone = user.tasksDone || [];
+    data.taskGhs = Number(user.taskGhs || 0);
+
     data.pendingTrx = Number(user.accruedTrx || 0);
     data.pendingUsdt = Number(user.accruedTrx || 0);
     data.pendingUsd = Number(user.accruedTrx || 0) * price;
@@ -1556,6 +1636,51 @@ app.get('/api/task/channel-status/:userId', requireTg, async (req, res) => {
     } catch (e) {
         return res.json({ success: true, verified: false, joined: false });
     }
+});
+
+// Claim a quest reward — server verifies channel membership with Telegram first
+app.post('/api/task/claim', requireTg, async (req, res) => {
+    const taskId = String(req.body.taskId || '');
+    const task = TASKS[taskId];
+    if (!task) return res.status(400).json({ success: false, message: 'Invalid task' });
+
+    const u = await User.findOne({ id: req.tgId });
+    if (!u || u.isBanned) return res.status(403).json({ success: false, message: 'Account restricted' });
+    if ((u.tasksDone || []).includes(taskId)) {
+        return res.status(400).json({ success: false, message: 'Task already completed' });
+    }
+
+    // Telegram membership check (any failure = no reward)
+    let joined = false;
+    try {
+        const d = await tgCall('getChatMember', { chat_id: task.chat, user_id: Number(req.tgId) });
+        if (d && d.ok && d.result) {
+            const st = d.result.status;
+            joined = ['creator', 'administrator', 'member'].includes(st) ||
+                     (st === 'restricted' && d.result.is_member === true);
+        } else {
+            console.log('task claim: getChatMember failed for', task.chat, d && d.description);
+        }
+    } catch (e) {
+        console.log('task claim error:', e && e.message);
+    }
+    if (!joined) {
+        return res.status(400).json({ success: false, message: 'Please join the channel first, then press Verify.' });
+    }
+
+    // Settle accrued mining at the OLD rate before the rate changes
+    const now = Date.now();
+    await settleAtomic(u, now, await getTrxPrice());
+
+    // Atomic: the same task can never be claimed twice
+    const done = await User.findOneAndUpdate(
+        { id: req.tgId, tasksDone: { $ne: taskId } },
+        { $push: { tasksDone: taskId }, $inc: { taskGhs: task.ghs } },
+        { new: true }
+    );
+    if (!done) return res.status(400).json({ success: false, message: 'Task already completed' });
+
+    res.json({ success: true, reward: task.ghs, taskGhs: done.taskGhs, tasksDone: done.tasksDone });
 });
 
 app.post('/api/update-ghs', requireTg, async (req, res) => {
