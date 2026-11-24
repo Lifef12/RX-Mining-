@@ -1,1 +1,2050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>RX MINING — Cloud Hash Protocol</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+const DEFAULT_BOT_USERNAME = "RXMiningTg_Bot";
 
+function detectTelegramAuth() {
+  try {
+    const tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+    const hashParams = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+    const searchParams = new URLSearchParams(location.search || '');
+
+    const rawInitData =
+      (tg && typeof tg.initData === 'string' && tg.initData.trim()) ||
+      hashParams.get('tgWebAppData') ||
+      searchParams.get('tgWebAppData') ||
+      '';
+
+    const platform = (tg && tg.platform) ? String(tg.platform).toLowerCase() : '';
+    const hasTgBridge = Boolean(
+      window.TelegramWebviewProxy ||
+      (window.external && typeof window.external.notify === 'function') ||
+      (platform && platform !== 'unknown')
+    );
+
+    if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) {
+      if (rawInitData.length > 0 || hasTgBridge) {
+        return {
+          allowed: true,
+          user: tg.initDataUnsafe.user,
+          startParam: tg.initDataUnsafe.start_param || hashParams.get('tgWebAppStartParam') || searchParams.get('ref') || ''
+        };
+      }
+    }
+
+    if (rawInitData) {
+      const params = new URLSearchParams(rawInitData);
+      const userJson = params.get('user');
+      if (userJson) {
+        const parsedUser = JSON.parse(userJson);
+        if (parsedUser && parsedUser.id && (hasTgBridge || params.has('hash'))) {
+          return {
+            allowed: true,
+            user: parsedUser,
+            startParam: params.get('start_param') || hashParams.get('tgWebAppStartParam') || searchParams.get('ref') || ''
+          };
+        }
+      }
+    }
+  } catch (e) {}
+
+  return { allowed: false, user: null, startParam: '' };
+}
+
+const TG_AUTH = detectTelegramAuth();
+
+if (!TG_AUTH.allowed) {
+  window.__RX_BLOCKED__ = true;
+  document.documentElement.classList.add('tg-blocked');
+} else {
+  window.__RX_BLOCKED__ = false;
+  var APP_BUILD = "2026-11-24-rx-mining-v1";
+  (function () {
+    try {
+      fetch(location.pathname + '?nocache=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r.text(); })
+        .then(function (t) {
+          var m = t.match(/var APP_BUILD = "([^"]+)"/);
+          if (!m || m[1] === APP_BUILD) return;
+          var tried = sessionStorage.getItem('app_build_tried');
+          if (tried === m[1]) return;
+          sessionStorage.setItem('app_build_tried', m[1]);
+          location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]) + location.hash);
+        })
+        .catch(function () {});
+    } catch (e) {}
+  })();
+}
+</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@600;700;800&display=swap">
+<style>
+/* Dark Navy + Gold Theme - balanced page fit */
+:root{
+  --bg:#080b14;
+  --gold:#f0c040;
+  --brown:#7a4a22;
+  --brown-d:#5a3516;
+  --blue:#2a3a70;
+  --blue-d:#1b2650;
+  --green:#336a4a;
+  --green-d:#1f4630;
+  --ink:#1a1206;
+  --text:#ffffff;
+  --muted:#cbd5e1;
+  --ok:#66cc88;
+  --bad:#ff6b6b;
+  --red:#ff6b6b;
+  --shell-max:430px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-tap-highlight-color:transparent}
+
+html,body{
+  min-height:100%;
+  width:100%;
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Rubik',system-ui,sans-serif;
+  font-size:15px;
+  overflow-x:hidden;
+}
+
+body{display:flex;justify-content:center;padding-bottom:96px}
+body.no-scroll{overflow:hidden}
+.mono{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+input{user-select:text;-webkit-user-select:text;font-family:inherit}
+
+/* Telegram-Only Gate Screen */
+html.tg-blocked, html.tg-blocked body {
+  overflow: hidden !important;
+  padding-bottom: 0 !important;
+  background: var(--bg) !important;
+}
+html.tg-blocked .shell,
+html.tg-blocked .nav,
+html.tg-blocked #splash,
+html.tg-blocked #toast,
+html.tg-blocked .modal-bg,
+html.tg-blocked .action-popup-bg {
+  display: none !important;
+}
+#tg-only-gate {
+  display: none;
+}
+html.tg-blocked #tg-only-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.tg-gate-card {
+  width: 100%;
+  max-width: 390px;
+  background: linear-gradient(var(--blue), var(--blue-d));
+  border: 2px solid var(--gold);
+  border-radius: 24px;
+  padding: 26px 20px;
+  text-align: center;
+  box-shadow: 0 6px 0 rgba(0,0,0,.5);
+}
+.tg-gate-icon {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 14px;
+  border-radius: 22px;
+  background: linear-gradient(var(--brown), var(--brown-d));
+  border: 2px solid var(--gold);
+  display: grid;
+  place-items: center;
+  color: var(--gold);
+  font-size: 32px;
+  box-shadow: 0 4px 0 rgba(0,0,0,.45);
+}
+.tg-gate-card h1 {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+.tg-gate-card p {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #e2e8f0;
+  margin-bottom: 18px;
+}
+.tg-gate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 15px;
+  background: linear-gradient(#f6cc58, #e0a53a);
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: 0 3px 0 rgba(0,0,0,.35);
+}
+
+.title{font-size:19px;font-weight:800;letter-spacing:.3px}
+.gold{color:var(--gold)}
+.big-number{color:var(--gold);font-size:34px;font-weight:800}
+
+/* Splash Screen */
+#splash{
+  position:fixed;inset:0;z-index:99999;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  transition:opacity .4s ease,visibility .4s ease;
+}
+#splash.hide{opacity:0;visibility:hidden;pointer-events:none}
+.sp-orb{
+  width:80px;height:80px;border-radius:22px;
+  background:linear-gradient(var(--brown),var(--brown-d));
+  border:2px solid var(--gold);
+  display:grid;place-items:center;color:var(--gold);font-size:34px;
+  box-shadow:0 4px 0 rgba(0,0,0,.45);
+  animation:orbBeat 1.4s ease-in-out infinite;
+}
+@keyframes orbBeat{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+.sp-name{margin-top:14px;font-size:22px;font-weight:900;letter-spacing:2.5px;color:var(--gold)}
+.sp-sub{font-size:11px;font-weight:700;letter-spacing:1.8px;color:#fff;margin-top:3px;opacity:.85}
+.sp-line{width:150px;height:6px;background:var(--blue-d);border:1.5px solid var(--gold);border-radius:99px;margin-top:18px;overflow:hidden}
+.sp-line i{display:block;height:100%;width:0;background:linear-gradient(90deg,#f6cc58,#e0a53a);animation:spGo 1.8s ease forwards}
+@keyframes spGo{to{width:100%}}
+
+/* Toast */
+#toast{
+  position:fixed;top:12px;left:50%;transform:translateX(-50%) translateY(-110px);
+  z-index:99998;width:calc(100% - 24px);max-width:var(--shell-max);
+  background:linear-gradient(var(--brown),var(--brown-d));
+  border:2px solid var(--gold);
+  color:#fff;padding:11px 16px;border-radius:16px;
+  display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700;
+  box-shadow:0 4px 0 rgba(0,0,0,.45);
+  transition:transform .3s cubic-bezier(.2,1,.3,1);
+}
+#toast.show{transform:translateX(-50%) translateY(0)}
+#toast i{color:var(--gold);font-size:15px}
+
+/* Shell */
+.shell{width:100%;max-width:var(--shell-max);padding:12px 14px 28px}
+
+/* Header */
+.hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:4px 0 12px;
+}
+.usr{display:flex;align-items:center;gap:10px}
+.usr-pic{
+  width:42px;height:42px;border-radius:13px;overflow:hidden;
+  background:linear-gradient(135deg,#f6cc58,#c9861b);
+  border:2px solid var(--gold);
+  box-shadow:0 3px 0 rgba(0,0,0,.45);
+  display:grid;place-items:center;
+  font-size:16px;font-weight:900;letter-spacing:.4px;color:var(--ink);
+  flex-shrink:0;
+}
+.usr-txt b{display:block;font-size:15px;font-weight:800;color:#fff}
+.usr-txt span{font-size:11px;font-weight:700;color:var(--gold)}
+.hdr-btns{display:flex;align-items:center;gap:8px}
+.chip-btn{
+  height:34px;padding:0 12px;border-radius:13px;
+  border:2px solid var(--gold);
+  background:linear-gradient(var(--blue),var(--blue-d));
+  color:var(--gold);font-size:12px;font-weight:800;
+  display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  box-shadow:0 3px 0 rgba(0,0,0,.4);
+}
+.chip-btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.4)}
+.chip-btn.icon-only{width:34px;padding:0;justify-content:center}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#66cc88;box-shadow:0 0 0 2px rgba(102,204,136,.25)}
+
+/* Pages */
+.page{display:none}
+.page.active{display:block;animation:fadeSlide .2s ease}
+@keyframes fadeSlide{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+/* Cards */
+.card{
+  border:2px solid var(--gold);
+  border-radius:22px;
+  padding:14px;
+  box-shadow:0 4px 0 rgba(0,0,0,.45);
+  margin-bottom:14px;
+}
+.card-brown{background:linear-gradient(var(--brown),var(--brown-d))}
+.card-blue{background:linear-gradient(var(--blue),var(--blue-d))}
+.card-green{background:linear-gradient(var(--green),var(--green-d))}
+
+/* Withdraw Specific Styling */
+.center{text-align:center;padding:18px 14px}
+.lbl{font-size:12px;font-weight:700;letter-spacing:.1em;margin-bottom:6px;color:#fde68a}
+.sub{font-family:ui-monospace,Menlo,monospace;font-size:14px;color:#e8d9b8;margin-top:4px}
+.unit{font-size:16px;color:#fff}
+
+.rw{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;margin-bottom:7px}
+.w-fld{display:flex;align-items:center;gap:9px;background:#141a35;border:2px solid var(--gold);border-radius:15px;padding:0 10px 0 12px;height:50px;transition:border-color .15s}
+.w-fld.ok{border-color:var(--ok)}
+.w-fld.bad{border-color:var(--bad)}
+.w-fld input{flex:1;min-width:0;background:transparent;border:0;color:#fff;font:700 15px 'Rubik',sans-serif;height:46px;padding:0;outline:none}
+.w-fld input::placeholder{color:#8a93c4}
+
+.tick{flex:none;width:26px;height:26px;color:#5b6490;transition:color .15s}
+.w-fld.ok .tick{color:var(--ok)}
+.w-fld.bad .tick{color:var(--bad)}
+.coin{flex:none;display:block}
+.cur{font-weight:800;color:var(--gold);font-size:14px}
+.msg{font-size:12.5px;margin:6px 2px 10px;min-height:16px;color:#cfd6f5}
+.sm{padding:7px 14px !important;font-size:12px !important;border-radius:11px !important;width:auto !important}
+.btn-w{width:100%;margin-top:12px}
+
+/* Wallet Balance Header Strip (Brown Card) */
+.wallet-strip{
+  background:linear-gradient(var(--brown),var(--brown-d));
+  border:2px solid var(--gold);
+  border-radius:22px;
+  padding:14px;
+  margin-bottom:12px;
+  box-shadow:0 4px 0 rgba(0,0,0,.45);
+}
+.ws-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ws-lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#fde68a}
+.ws-rate{
+  font-size:11px;font-weight:800;color:var(--ink);
+  background:linear-gradient(#f6cc58,#e0a53a);
+  padding:3px 9px;border-radius:99px;
+  box-shadow:0 2px 0 rgba(0,0,0,.3);
+}
+.ws-bal{font-size:30px;font-weight:800;letter-spacing:-.8px;margin:6px 0 2px;color:var(--gold);text-shadow:0 2px 0 rgba(0,0,0,.35)}
+.ws-bal small{font-size:14px;font-weight:800;color:#fff;margin-left:5px}
+.ws-usd{font-size:12px;font-weight:700;color:#f8fafc;opacity:.92}
+
+/* Quick Action Circles */
+.quick-actions{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
+  margin-top:14px;padding-top:12px;border-top:1px solid rgba(240,192,64,.35);
+}
+.qa-item{
+  background:transparent;border:0;display:flex;flex-direction:column;align-items:center;gap:5px;
+  cursor:pointer;color:#fff;font-size:12px;font-weight:700;
+}
+.qa-circle{
+  width:42px;height:42px;border-radius:14px;display:grid;place-items:center;
+  font-size:15px;border:2px solid var(--gold);
+  box-shadow:0 3px 0 rgba(0,0,0,.38);
+  transition:transform .1s ease,box-shadow .1s ease;
+}
+.qa-item:active .qa-circle{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.38)}
+.qa-blue{background:linear-gradient(var(--blue),var(--blue-d));color:var(--gold)}
+.qa-purple{background:linear-gradient(#533b8c,#3a2a6a);color:var(--gold)}
+.qa-mint{background:linear-gradient(#66cc88,#4aa86a);color:var(--ink)}
+.qa-orange{background:linear-gradient(#f6cc58,#e0a53a);color:var(--ink)}
+
+/* CENTRAL INTERACTIVE REACTOR (Blue Card) */
+.reactor-stage{
+  background:linear-gradient(var(--blue),var(--blue-d));
+  border:2px solid var(--gold);
+  border-radius:22px;
+  padding:14px;
+  color:#fff;
+  margin-bottom:12px;
+  position:relative;overflow:hidden;
+  box-shadow:0 4px 0 rgba(0,0,0,.45);
+  text-align:center;
+}
+.reactor-stage::before{
+  content:"";position:absolute;inset:-40%;
+  background:radial-gradient(circle,rgba(240,192,64,.14) 0%,transparent 60%);
+  pointer-events:none;
+}
+.rs-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:800;color:var(--gold)}
+.rs-ring-wrap{
+  position:relative;width:184px;height:184px;margin:14px auto;
+  display:grid;place-items:center;
+}
+.rs-ring-outer{
+  position:absolute;inset:0;border-radius:50%;
+  border:2px dashed var(--gold);
+  opacity:.75;
+  animation:spinSlow 18s linear infinite;
+}
+.rs-ring-inner{
+  position:absolute;inset:11px;border-radius:50%;
+  border:2px solid var(--gold);
+  background:rgba(8,11,20,.55);
+  box-shadow:inset 0 3px 10px rgba(0,0,0,.5);
+}
+@keyframes spinSlow{to{transform:rotate(360deg)}}
+.rs-core{
+  position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;
+}
+.rs-core small{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#fde68a;font-weight:800}
+.rs-core b{font-size:18px;font-weight:800;margin:4px 0 9px;letter-spacing:-.4px;color:var(--gold)}
+.rs-claim-btn{
+  background:linear-gradient(#f6cc58,#e0a53a);
+  color:var(--ink);border:0;border-radius:14px;
+  padding:9px 18px;font-size:12px;font-weight:800;letter-spacing:.4px;
+  cursor:pointer;
+  box-shadow:0 3px 0 rgba(0,0,0,.35);
+  transition:transform .1s,box-shadow .1s;
+}
+.rs-claim-btn:active{transform:translateY(3px);box-shadow:0 0 0 rgba(0,0,0,.35)}
+.rs-metrics{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+  background:rgba(8,11,20,.45);
+  border:1.5px solid rgba(240,192,64,.45);
+  border-radius:15px;padding:9px 8px;
+  margin-top:8px;
+}
+.rs-metrics span{display:block;font-size:10px;color:#fde68a;font-weight:700}
+.rs-metrics b{display:block;font-size:13px;font-weight:800;margin-top:2px;color:#fff}
+
+/* Section Card (Blue / Green / Brown variants) */
+.box{
+  background:linear-gradient(var(--blue),var(--blue-d));
+  border:2px solid var(--gold);
+  border-radius:22px;
+  padding:14px;
+  margin-bottom:12px;
+  box-shadow:0 4px 0 rgba(0,0,0,.45);
+}
+.box.green-box{background:linear-gradient(var(--green),var(--green-d))}
+.box.brown-box{background:linear-gradient(var(--brown),var(--brown-d))}
+.box-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.box-title h3{font-size:17px;font-weight:800;color:var(--gold);letter-spacing:.3px}
+
+/* Segmented Control */
+.pills{
+  display:inline-flex;background:rgba(8,11,20,.55);
+  border:1.5px solid var(--gold);
+  border-radius:12px;padding:2px;
+}
+.pills button{
+  border:0;background:transparent;padding:6px 12px;border-radius:9px;
+  font-size:11px;font-weight:800;color:#cbd5e1;cursor:pointer;
+}
+.pills button.on{
+  background:linear-gradient(#f6cc58,#e0a53a);
+  color:var(--ink);
+  box-shadow:0 2px 0 rgba(0,0,0,.35);
+}
+
+/* List Rows */
+.row-item{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 0;border-top:1px solid rgba(240,192,64,.25);
+}
+.row-item:first-child{border-top:0;padding-top:2px}
+.row-left{display:flex;align-items:center;gap:10px}
+.row-ico{
+  width:36px;height:36px;border-radius:11px;
+  background:linear-gradient(var(--brown),var(--brown-d));
+  border:1.5px solid var(--gold);
+  color:var(--gold);display:grid;place-items:center;font-size:13px;flex-shrink:0;
+}
+.row-left b{display:block;font-size:13px;font-weight:800;color:#fff}
+.row-left small{font-size:11px;color:#cbd5e1;font-weight:600}
+.row-right{text-align:right}
+.row-right b{display:block;font-size:13px;font-weight:800;color:var(--gold)}
+.row-right span{
+  font-size:10px;font-weight:800;color:#fff;
+  background:linear-gradient(#66cc88,#4aa86a);
+  padding:2px 7px;border-radius:6px;display:inline-block;margin-top:2px;
+}
+
+/* Big Channel Quest Cards */
+.quest-big{
+  padding:16px;
+  border-radius:18px;
+  background:rgba(8,11,20,.52);
+  border:1.5px solid rgba(240,192,64,.65);
+  margin-bottom:14px;
+  box-shadow:0 3px 0 rgba(0,0,0,.35);
+}
+.quest-big:last-child{margin-bottom:0}
+.quest-big-top{
+  display:flex;align-items:center;gap:12px;
+  margin-bottom:14px;
+}
+.quest-ico-lg{
+  width:46px;height:46px;border-radius:14px;
+  background:linear-gradient(var(--brown),var(--brown-d));
+  border:2px solid var(--gold);
+  color:var(--gold);
+  display:grid;place-items:center;font-size:20px;
+  flex-shrink:0;
+  box-shadow:0 3px 0 rgba(0,0,0,.35);
+}
+.quest-big-info{flex:1;min-width:0}
+.quest-big-info b{display:block;font-size:15.5px;font-weight:800;color:#fff;line-height:1.25}
+.quest-reward-pill{
+  display:inline-flex;align-items:center;gap:5px;
+  margin-top:7px;padding:4px 10px;border-radius:99px;
+  background:rgba(240,192,64,.14);border:1px solid rgba(240,192,64,.45);
+  color:#fde68a;font-size:11.5px;font-weight:800;
+}
+.quest-big .btn{width:100%;padding:12px 16px;font-size:14px;border-radius:14px}
+
+/* Buttons: 3D press effect */
+.btn{
+  border:0;
+  border-radius:15px;
+  padding:12px 16px;
+  font:800 14.5px 'Rubik',sans-serif;
+  cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  width:100%;
+  box-shadow:0 3px 0 rgba(0,0,0,.35);
+  transition:transform .1s,box-shadow .1s;
+}
+.btn:active{transform:translateY(3px);box-shadow:0 0 0 rgba(0,0,0,.35)}
+.btn-gold,.btn-blue{background:linear-gradient(#f6cc58,#e0a53a);color:var(--ink)}
+.btn-green{background:linear-gradient(#66cc88,#4aa86a);color:#fff}
+.btn-dark{background:linear-gradient(var(--brown),var(--brown-d));color:var(--gold);border:1.5px solid var(--gold)}
+.btn-soft{background:rgba(8,11,20,.55);color:var(--gold);border:1.5px solid var(--gold)}
+.btn-muted{background:#334155;color:#94a3b8;cursor:not-allowed;box-shadow:0 2px 0 rgba(0,0,0,.35)}
+.btn-muted:active{transform:none;box-shadow:0 2px 0 rgba(0,0,0,.35)}
+.btn-sm{width:auto;padding:8px 14px;font-size:12px;border-radius:11px}
+
+/* AFFILIATE / PARTNER NETWORK */
+.aff-banner{
+  background:linear-gradient(var(--brown),var(--brown-d));
+  border:2px solid var(--gold);
+  border-radius:22px;
+  padding:14px;
+  margin-bottom:12px;
+  box-shadow:0 4px 0 rgba(0,0,0,.45);
+}
+.aff-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.aff-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--ink);background:linear-gradient(#f6cc58,#e0a53a);padding:4px 10px;border-radius:99px;
+}
+.aff-code-btn{
+  background:rgba(8,11,20,.5);border:1.5px solid var(--gold);border-radius:10px;
+  padding:5px 9px;font-size:11px;font-weight:800;color:var(--gold);cursor:pointer;
+}
+.aff-banner h2{font-size:18px;font-weight:800;letter-spacing:-.2px;margin-bottom:4px;color:var(--gold)}
+.aff-banner p{font-size:12px;color:#f8fafc;line-height:1.45;opacity:.92}
+
+/* Visual 3-Tier Split Bar */
+.split-bar-wrap{margin:12px 0}
+.split-bar{display:flex;height:9px;border-radius:99px;overflow:hidden;gap:2px;background:rgba(8,11,20,.5);padding:1px;border:1px solid var(--gold)}
+.sb-1{flex:15;background:linear-gradient(#f6cc58,#e0a53a);border-radius:99px}
+.sb-2{flex:3;background:#60a5fa;border-radius:99px}
+.sb-3{flex:1;background:#66cc88;border-radius:99px}
+.split-legend{
+  display:flex;justify-content:space-between;margin-top:6px;
+  font-size:11px;font-weight:800;color:#fde68a;
+}
+.split-legend span i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+
+/* Link + Dual Action Buttons */
+.aff-url-box{
+  display:flex;align-items:center;gap:8px;
+  background:rgba(8,11,20,.55);
+  border:1.5px solid var(--gold);border-radius:13px;padding:9px 11px;margin-bottom:12px;
+}
+.aff-url-box i{color:var(--gold);font-size:13px}
+.aff-url-box span{flex:1;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aff-cta-row{display:grid;grid-template-columns:1.3fr 1fr;gap:8px}
+.aff-social-strip{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-top:12px;padding-top:11px;border-top:1px solid rgba(240,192,64,.3);
+}
+.aff-social-strip small{font-size:11px;font-weight:800;color:#fde68a}
+.aff-icons{display:flex;gap:6px}
+.aff-icons a{
+  width:31px;height:31px;border-radius:10px;
+  background:rgba(8,11,20,.55);
+  border:1.5px solid var(--gold);color:var(--gold);display:grid;place-items:center;
+  text-decoration:none;font-size:13px;
+}
+
+/* 4-Tile KPI Strip */
+.kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.kpi-card{
+  background:linear-gradient(var(--green),var(--green-d));
+  border:2px solid var(--gold);border-radius:18px;
+  padding:11px;display:flex;align-items:center;gap:9px;
+  box-shadow:0 4px 0 rgba(0,0,0,.45);
+}
+.kpi-ico{
+  width:34px;height:34px;border-radius:11px;display:grid;place-items:center;
+  font-size:13px;flex-shrink:0;border:1.5px solid var(--gold);
+}
+.kpi-card small{display:block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#fde68a}
+.kpi-card b{display:block;font-size:13px;font-weight:800;margin-top:1px;color:#fff}
+
+/* Interactive Tier Inspector */
+.tier-tabs{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:5px;
+  background:rgba(8,11,20,.55);padding:3px;border-radius:14px;border:1.5px solid var(--gold);
+  margin-bottom:12px;
+}
+.tier-tab{
+  border:0;background:transparent;padding:8px 5px;border-radius:10px;
+  font-size:11px;font-weight:800;color:#cbd5e1;cursor:pointer;transition:.15s;
+}
+.tier-tab.active{
+  background:linear-gradient(#f6cc58,#e0a53a);
+  color:var(--ink);
+  box-shadow:0 2px 0 rgba(0,0,0,.35);
+}
+.tier-focus{
+  background:rgba(8,11,20,.55);
+  border:1.5px solid var(--gold);
+  color:#fff;border-radius:16px;padding:13px;margin-bottom:12px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.tier-focus small{display:block;font-size:11px;color:#fde68a;font-weight:700}
+.tier-focus b{display:block;font-size:19px;font-weight:800;margin-top:2px;color:var(--gold)}
+.tier-focus span{
+  font-size:11px;font-weight:800;color:var(--ink);
+  background:linear-gradient(#f6cc58,#e0a53a);
+  padding:4px 9px;border-radius:99px;
+}
+
+.tier-table-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 2px;border-top:1px solid rgba(240,192,64,.25);font-size:12px;
+}
+.tier-table-row:first-child{border-top:0}
+.tier-tag{
+  display:inline-block;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:800;
+  background:linear-gradient(#f6cc58,#e0a53a);color:var(--ink);margin-right:5px;
+}
+
+/* Form Inputs (Deposit etc.) */
+.fld{margin-bottom:12px}
+.fld label{display:flex;justify-content:space-between;font-size:12px;font-weight:800;color:#fde68a;margin-bottom:6px}
+.inp-box{
+  display:flex;align-items:center;gap:7px;
+  background:rgba(8,11,20,.6);
+  border:1.5px solid var(--gold);border-radius:14px;padding:0 10px 0 12px;
+}
+.inp-box:focus-within{box-shadow:0 0 0 2px rgba(240,192,64,.25)}
+.inp-box input{flex:1;min-width:0;border:0;background:transparent;padding:11px 0;font-size:14px;font-weight:800;color:#fff;outline:none}
+.inp-box input::placeholder{color:#94a3b8}
+.tag-btn{
+  background:linear-gradient(#f6cc58,#e0a53a);color:var(--ink);
+  border:0;border-radius:9px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;
+  box-shadow:0 2px 0 rgba(0,0,0,.35);
+}
+.err{font-size:11px;color:var(--red);font-weight:800;margin-top:4px}
+
+.coins-list{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.coin-tile{
+  background:rgba(8,11,20,.55);
+  border:2px solid var(--gold);border-radius:17px;
+  padding:13px 10px;text-align:center;cursor:pointer;
+  box-shadow:0 3px 0 rgba(0,0,0,.4);
+  transition:transform .1s,background .15s;
+}
+.coin-tile:hover{background:linear-gradient(var(--brown),var(--brown-d))}
+.coin-tile:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.4)}
+.coin-tile img{width:32px;height:32px;object-fit:contain;margin-bottom:6px}
+.coin-tile h4{font-size:14px;font-weight:800;color:var(--gold)}
+.coin-tile span{font-size:10px;color:#fff;font-weight:700;opacity:.85}
+.coins-list .coin-tile:last-child:nth-child(odd){grid-column:1/-1}
+
+/* Bottom navigation bar - balanced fit */
+.nav{
+  position:fixed;
+  left:50%;
+  bottom:10px;
+  transform:translateX(-50%);
+  width:calc(100% - 24px);
+  max-width:var(--shell-max);
+  z-index:999;
+  background:#3a2a6a;
+  border:2px solid var(--gold);
+  border-radius:24px;
+  padding:5px;
+  box-shadow:0 4px 0 rgba(0,0,0,.5);
+}
+.nav-inner{
+  background:linear-gradient(var(--brown),var(--brown-d));
+  border:2px solid var(--gold);
+  border-radius:19px;
+  padding:8px 6px;
+  display:flex;
+  justify-content:space-around;
+  color:var(--gold);
+  font-weight:700;
+  font-size:12.5px;
+}
+.tab-btn{
+  background:transparent;border:0;color:#fde68a;opacity:.78;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:12.5px;font-weight:700;flex:1;cursor:pointer;padding:4px 0;
+  border-radius:13px;transition:.15s;
+}
+.tab-btn i{font-size:16px}
+.tab-btn.active{
+  opacity:1;
+  color:var(--ink);
+  background:linear-gradient(#f6cc58,#e0a53a);
+  box-shadow:0 2px 0 rgba(0,0,0,.35);
+}
+
+/* Modal Sheet */
+.modal-bg{
+  position:fixed;inset:0;z-index:9999;background:rgba(8,11,20,.78);
+  backdrop-filter:blur(4px);display:none;align-items:flex-end;justify-content:center;
+}
+.modal-bg.open{display:flex}
+.modal-drawer{
+  width:100%;max-width:var(--shell-max);
+  background:linear-gradient(var(--blue),var(--blue-d));
+  border-top:2px solid var(--gold);
+  border-left:2px solid var(--gold);
+  border-right:2px solid var(--gold);
+  border-radius:24px 24px 0 0;padding:16px 16px 24px;
+  max-height:90vh;overflow-y:auto;position:relative;
+  animation:sheetUp .25s ease;
+}
+@keyframes sheetUp{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.drawer-handle{width:40px;height:4px;border-radius:99px;background:var(--gold);margin:0 auto 12px}
+.modal-drawer input[type="text"]{
+  width:100%;background:rgba(8,11,20,.65);border:1.5px solid var(--gold);
+  color:#fff;
+  border-radius:13px;padding:11px;font-size:12px;font-weight:700;margin:5px 0 11px;outline:none;
+}
+
+/* Professional Action Pop-up (Claim / Deposit / Withdraw) */
+.action-popup-bg{
+  position:fixed;inset:0;z-index:100000;
+  background:rgba(8,11,20,.82);
+  backdrop-filter:blur(5px);
+  display:none;align-items:center;justify-content:center;
+  padding:20px;
+}
+.action-popup-bg.open{display:flex}
+.action-popup-card{
+  width:100%;max-width:356px;
+  background:#ffffff;
+  color:#111827;
+  border-radius:26px;
+  padding:26px 22px 22px;
+  text-align:center;
+  box-shadow:0 20px 50px rgba(0,0,0,.6);
+  animation:popIn .24s cubic-bezier(.2,1.15,.3,1);
+}
+@keyframes popIn{
+  from{opacity:0;transform:scale(.9) translateY(12px)}
+  to{opacity:1;transform:scale(1) translateY(0)}
+}
+.ap-badge{
+  width:72px;height:72px;margin:0 auto 14px;
+  border-radius:22px;
+  display:grid;place-items:center;
+  font-size:32px;
+  box-shadow:0 10px 24px rgba(0,0,0,.14);
+}
+.ap-badge.claim{background:linear-gradient(135deg,#fff0b3,#f59e0b);color:#78350f}
+.ap-badge.deposit{background:linear-gradient(135deg,#dcfce7,#16a34a);color:#14532d}
+.ap-badge.withdraw{background:linear-gradient(135deg,#dbeafe,#2563eb);color:#1e3a8a}
+.ap-badge.info{background:linear-gradient(135deg,#ede9fe,#7c3aed);color:#3b0764}
+.action-popup-card h3{font-size:21px;font-weight:900;line-height:1.2;color:#111827}
+.ap-status{font-size:20px;font-weight:900;margin-top:4px;line-height:1.2}
+.ap-status.ok{color:#16a34a}
+.ap-status.warn{color:#d97706}
+.ap-status.info{color:#6d28d9}
+.action-popup-card p{
+  font-size:13.5px;font-weight:600;color:#4b5563;
+  line-height:1.45;margin:12px 0 20px;
+}
+.action-popup-card p b{color:#111827;font-weight:800}
+.ap-btn{
+  width:100%;border:0;border-radius:16px;padding:14px 18px;
+  background:linear-gradient(90deg,#7c3aed,#6d28d9);
+  color:#ffffff;font:800 14px 'Rubik',sans-serif;letter-spacing:.6px;
+  cursor:pointer;box-shadow:0 8px 20px rgba(109,40,217,.32);
+  transition:transform .1s ease,filter .15s ease;
+}
+.ap-btn:hover{filter:brightness(1.06)}
+.ap-btn:active{transform:translateY(2px)}
+</style>
+</head>
+<body>
+
+<!-- Telegram-Only Access Blocker -->
+<div id="tg-only-gate">
+  <div class="tg-gate-card">
+    <div class="tg-gate-icon"><i class="fa-brands fa-telegram"></i></div>
+    <h1>TELEGRAM ONLY</h1>
+    <p>This app cannot be opened directly in a web browser. Please open <strong>RX MINING</strong> inside Telegram.</p>
+    <a class="tg-gate-btn" id="open-in-telegram-link" href="https://t.me/RXMiningTg_Bot">
+      <i class="fa-brands fa-telegram"></i> OPEN IN TELEGRAM
+    </a>
+  </div>
+</div>
+
+<!-- Splash -->
+<div id="splash">
+  <div class="sp-orb"><i class="fa-solid fa-atom"></i></div>
+  <div class="sp-name">RX MINING</div>
+  <div class="sp-sub">CLOUD HASH PROTOCOL</div>
+  <div class="sp-line"><i></i></div>
+</div>
+
+<!-- Toast -->
+<div id="toast"><i class="fa-solid fa-circle-info"></i><span id="toast-msg">Ready</span></div>
+
+<!-- Professional Action Pop-up -->
+<div class="action-popup-bg" id="action-popup" onclick="if(event.target===this)closeActionPopup()">
+  <div class="action-popup-card">
+    <div class="ap-badge claim" id="ap-badge"><i class="fa-solid fa-coins" id="ap-icon"></i></div>
+    <h3 id="ap-title">Profit Successfully</h3>
+    <div class="ap-status ok" id="ap-status">Claimed</div>
+    <p id="ap-desc">Your reward is now added to your balance.</p>
+    <button type="button" class="ap-btn" id="ap-btn" onclick="closeActionPopup()">GOT IT &gt;</button>
+  </div>
+</div>
+
+<div class="shell">
+  <!-- Header -->
+  <header class="hdr">
+    <div class="usr">
+      <div class="usr-pic" id="user-avatar" aria-label="User Logo">M</div>
+      <div class="usr-txt">
+        <b id="user-display-name">Miner</b>
+        <span class="mono" id="user-id-text">ID 10001</span>
+      </div>
+    </div>
+    <div class="hdr-btns">
+      <button type="button" class="chip-btn icon-only" id="sound-toggle" onclick="toggleSound()" aria-label="Audio">
+        <i class="fa-solid fa-volume-high"></i>
+      </button>
+      <div class="chip-btn"><i class="status-dot"></i> Online</div>
+    </div>
+  </header>
+
+  <!-- 1. HOME / REACTOR -->
+  <section id="page-miner" class="page active">
+    <div class="wallet-strip">
+      <div class="ws-top">
+        <span class="ws-lbl">Total USDT (BEP-20) Balance</span>
+        <span class="ws-rate mono" id="delta-rate">+0.0000 USDT/d</span>
+      </div>
+      <div class="ws-bal big-number mono"><span id="main-balance">0.00000000</span><small>USDT</small></div>
+      <div class="ws-usd mono">≈ $<span id="home-usd-val">0.00</span> USD · <span id="bep20-rate-tag">1 USDT = $1.00</span></div>
+
+      <div class="quick-actions">
+        <button type="button" class="qa-item" onclick="goPage('deposit')">
+          <span class="qa-circle qa-orange"><i class="fa-solid fa-plus"></i></span>
+          <span>Boost</span>
+        </button>
+        <button type="button" class="qa-item" onclick="goPage('withdraw')">
+          <span class="qa-circle qa-mint"><i class="fa-solid fa-arrow-up-right-from-square"></i></span>
+          <span>Withdraw</span>
+        </button>
+        <button type="button" class="qa-item" onclick="goPage('tasks')">
+          <span class="qa-circle qa-purple"><i class="fa-solid fa-gift"></i></span>
+          <span>Quests</span>
+        </button>
+        <button type="button" class="qa-item" onclick="goPage('earn')">
+          <span class="qa-circle qa-blue"><i class="fa-solid fa-user-plus"></i></span>
+          <span>Invite</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Central Interactive Reactor -->
+    <div class="reactor-stage">
+      <div class="rs-head">
+        <span><i class="fa-solid fa-microchip"></i> CORE REACTOR</span>
+        <span class="mono"><span id="ghs-power">0.00</span> GHS</span>
+      </div>
+
+      <div class="rs-ring-wrap">
+        <div class="rs-ring-outer"></div>
+        <div class="rs-ring-inner"></div>
+        <div class="rs-core">
+          <small>Mined Balance</small>
+          <b class="mono" id="pending-balance">0.00000000</b>
+          <button type="button" class="rs-claim-btn" onclick="claimMining()">
+            CLAIM USDT
+          </button>
+        </div>
+      </div>
+
+      <div class="rs-metrics mono">
+        <div><span>Daily Est.</span><b id="daily-rate-display">0.0000 USDT</b></div>
+        <div><span>Hashrate</span><b id="hash">0.0 TH/s</b></div>
+        <div><span>Node Temp</span><b id="temp">36°C</b></div>
+      </div>
+    </div>
+
+    <!-- Live Ledger -->
+    <div class="box green-box">
+      <div class="box-title">
+        <h3 class="title">Live Ledger</h3>
+        <div class="pills">
+          <button type="button" id="seg-wth" class="on" onclick="switchLedger('wth')">Payouts</button>
+          <button type="button" id="seg-dep" onclick="switchLedger('dep')">Deposits</button>
+        </div>
+      </div>
+      <div id="ledger-list"></div>
+    </div>
+  </section>
+
+  <!-- 2. TASKS -->
+  <section id="page-tasks" class="page">
+    <div class="box">
+      <div class="box-title"><h3 class="title">Earn Free Hash Power</h3></div>
+
+      <div class="quest-big">
+        <div class="quest-big-top">
+          <div class="quest-ico-lg"><i class="fa-brands fa-telegram"></i></div>
+          <div class="quest-big-info">
+            <b>Official Channel</b>
+            <div class="quest-reward-pill"><i class="fa-solid fa-bolt"></i> Reward: +0.02 GHS</div>
+          </div>
+        </div>
+        <button type="button" class="btn btn-gold" id="task1-btn" onclick="handleChannelQuest('official')">JOIN CHANNEL</button>
+      </div>
+
+      <div class="quest-big">
+        <div class="quest-big-top">
+          <div class="quest-ico-lg"><i class="fa-solid fa-shield-halved"></i></div>
+          <div class="quest-big-info">
+            <b>Payment Channel</b>
+            <div class="quest-reward-pill"><i class="fa-solid fa-bolt"></i> Reward: +0.02 GHS</div>
+          </div>
+        </div>
+        <button type="button" class="btn btn-gold" id="task2-btn" onclick="handleChannelQuest('payment')">JOIN CHANNEL</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. AFFILIATE / PARTNER NETWORK -->
+  <section id="page-earn" class="page">
+    <div class="aff-banner">
+      <div class="aff-top">
+        <span class="aff-badge"><i class="fa-solid fa-crown"></i> VIP AFFILIATE</span>
+        <button type="button" class="aff-code-btn mono" onclick="copyCode()">
+          CODE: <span id="ref-code-text">10001</span> <i class="fa-regular fa-copy"></i>
+        </button>
+      </div>
+      <h2 class="title">Earn up to 19% Commission</h2>
+      <p>Receive instant USDT (BEP-20) rewards every time your invited network boosts hash power across 3 tiers.</p>
+
+      <!-- 3-Tier Visual Commission Split -->
+      <div class="split-bar-wrap">
+        <div class="split-bar">
+          <div class="sb-1"></div>
+          <div class="sb-2"></div>
+          <div class="sb-3"></div>
+        </div>
+        <div class="split-legend mono">
+          <span><i style="background:#f6cc58"></i>L1 · 15%</span>
+          <span><i style="background:#60a5fa"></i>L2 · 3%</span>
+          <span><i style="background:#66cc88"></i>L3 · 1%</span>
+        </div>
+      </div>
+
+      <!-- Referral URL & Native Share -->
+      <div class="aff-url-box">
+        <i class="fa-solid fa-link"></i>
+        <span class="mono" id="ref-link">Loading...</span>
+      </div>
+
+      <div class="aff-cta-row">
+        <button type="button" class="btn btn-gold" onclick="shareTelegramNative()">
+          <i class="fa-brands fa-telegram"></i> Share Invite
+        </button>
+        <button type="button" class="btn btn-green" onclick="copyInvite()">
+          <i class="fa-regular fa-copy"></i> Copy Link
+        </button>
+      </div>
+
+      <div class="aff-social-strip">
+        <small>Share via social</small>
+        <div class="aff-icons">
+          <a id="share-tg" href="https://t.me/share/url" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i></a>
+          <a id="share-wa" href="https://api.whatsapp.com/send" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i></a>
+          <a id="share-tw" href="https://twitter.com/intent/tweet" target="_blank" rel="noopener"><i class="fa-brands fa-x-twitter"></i></a>
+          <a id="share-fb" href="https://www.facebook.com/sharer/sharer.php" target="_blank" rel="noopener"><i class="fa-brands fa-facebook-f"></i></a>
+          <a href="https://www.linkedin.com/sharing/share-offsite/" target="_blank" rel="noopener"><i class="fa-brands fa-linkedin-in"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4-Tile Network KPIs -->
+    <div class="kpi-grid mono">
+      <div class="kpi-card">
+        <div class="kpi-ico qa-blue"><i class="fa-solid fa-users"></i></div>
+        <div><small>Network</small><b id="stat-team-size">0</b></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-ico qa-purple"><i class="fa-solid fa-user-check"></i></div>
+        <div><small>Direct</small><b id="stat-new-members">0</b></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-ico qa-mint"><i class="fa-solid fa-arrow-trend-up"></i></div>
+        <div><small>Deposits</small><b id="stat-team-deposits">0.00 USDT</b></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-ico qa-orange"><i class="fa-solid fa-wallet"></i></div>
+        <div><small>Payouts</small><b id="stat-total-wth">0.00 USDT</b></div>
+      </div>
+    </div>
+
+    <!-- Tier Breakdown Card -->
+    <div class="box">
+      <div class="box-title"><h3 class="title">Commission Breakdown</h3></div>
+
+      <div class="tier-tabs">
+        <button type="button" class="tier-tab active" id="lvl-card-1" onclick="selectLevel(1)">Tier 1 (15%)</button>
+        <button type="button" class="tier-tab" id="lvl-card-2" onclick="selectLevel(2)">Tier 2 (3%)</button>
+        <button type="button" class="tier-tab" id="lvl-card-3" onclick="selectLevel(3)">Tier 3 (1%)</button>
+      </div>
+
+      <div class="tier-focus">
+        <div>
+          <small id="active-level-label">Level 1 - 15% Commission</small>
+          <b class="mono" id="ref-reward">0.0000 USDT</b>
+        </div>
+        <span class="mono" id="ref-count">0 referrals</span>
+      </div>
+
+      <div>
+        <div class="tier-table-row">
+          <div><span class="tier-tag">L1 · 15%</span> <span style="color:#cbd5e1;">Active: <b id="lvl1-count" style="color:#fff;">0/0</b></span></div>
+          <b class="mono" style="color:var(--gold);" id="lvl1-income">0.0000 USDT</b>
+        </div>
+        <div class="tier-table-row">
+          <div><span class="tier-tag">L2 · 3%</span> <span style="color:#cbd5e1;">Active: <b id="lvl2-count" style="color:#fff;">0/0</b></span></div>
+          <b class="mono" style="color:var(--gold);" id="lvl2-income">0.0000 USDT</b>
+        </div>
+        <div class="tier-table-row">
+          <div><span class="tier-tag">L3 · 1%</span> <span style="color:#cbd5e1;">Active: <b id="lvl3-count" style="color:#fff;">0/0</b></span></div>
+          <b class="mono" style="color:var(--gold);" id="lvl3-income">0.0000 USDT</b>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. WALLET / WITHDRAW -->
+  <section id="page-withdraw" class="page">
+    <div class="card card-brown center">
+      <p class="lbl">AVAILABLE FOR WITHDRAWAL (BEP-20)</p>
+      <p class="big-number mono"><span id="withdraw-balance">0.00000000</span> <span class="unit">USDT</span></p>
+      <p class="sub">≈ $<span id="withdraw-dollar-val">0.00</span> USD</p>
+    </div>
+
+    <div class="card card-blue">
+      <div class="rw"><span>BNB Smart Chain (BEP-20) address</span><span class="gold">Starts with 0x</span></div>
+      <div class="w-fld" id="addrBox">
+        <svg class="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Verified">
+          <path d="M5 7.5 12 3l7 4.5v5c0 4.2-3 7.2-7 8.5-4-1.3-7-4.3-7-8.5z"/>
+          <path d="m8.8 12.2 2.4 2.4 4.2-4.6"/>
+        </svg>
+        <input id="withdraw-address" type="text" placeholder="Enter 42-character address" autocomplete="off" spellcheck="false" oninput="checkWithdrawAddr()">
+        <button class="btn btn-gold sm" type="button" onclick="pasteAddress()">PASTE</button>
+      </div>
+      <p class="msg" id="addrMsg"></p>
+
+      <div class="rw"><span>Amount</span><span class="gold">Min 1.00 USDT</span></div>
+      <div class="w-fld" id="amtBox">
+        <img class="coin" src="https://cryptologos.cc/logos/tether-usdt-logo.png?v=032" width="30" height="30" alt="USDT"
+             onerror="this.outerHTML='<svg class=&quot;coin&quot; width=&quot;30&quot; height=&quot;30&quot; viewBox=&quot;0 0 30 30&quot;><circle cx=&quot;15&quot; cy=&quot;15&quot; r=&quot;15&quot; fill=&quot;#26a17b&quot;/></svg>'">
+        <input id="withdraw-amount" type="text" inputmode="decimal" value="1" aria-label="Amount in USDT" oninput="checkWithdrawAmt()">
+        <span class="cur">USDT</span>
+        <button class="btn btn-gold sm" type="button" onclick="setMaxWithdraw()">MAX</button>
+      </div>
+      <p class="msg" id="amtMsg">≈ $1.00 USD</p>
+
+      <button class="btn btn-green btn-w" id="go" type="button" onclick="requestWithdraw()">Send withdrawal</button>
+    </div>
+
+    <div class="card card-green">
+      <p class="title gold">Withdrawal history</p>
+      <div id="withdraw-history-list" style="margin-top:8px;color:#e6f2ea">No withdrawal requests yet.</div>
+    </div>
+  </section>
+
+  <!-- 5. DEPOSIT / BUY GHS -->
+  <section id="page-deposit" class="page">
+    <div class="box brown-box">
+      <div class="box-title">
+        <h3 class="title">Boost Hash Power</h3>
+        <button type="button" class="tag-btn" onclick="goPage('miner')">Close</button>
+      </div>
+
+      <div class="fld">
+        <label for="deposit-amount"><span>Investment (USD)</span><span>$1 – $10,000</span></label>
+        <div class="inp-box">
+          <input id="deposit-amount" type="number" min="1" max="10000" value="1" oninput="calculateGHS()">
+        </div>
+        <small style="display:block;margin-top:6px;color:#fde68a;font-weight:700;font-size:12px;" id="plan-info-line">
+          $1 = 1 GHS · 30% Daily · 10 Days Plan
+        </small>
+      </div>
+
+      <div style="background:rgba(8,11,20,.55);border:1.5px solid var(--gold);border-radius:15px;padding:12px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;">
+          <span style="color:#cbd5e1;font-weight:700;">New Power</span>
+          <b class="mono" style="color:#fff;" id="calc-ghs">1 GHS</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;">
+          <span style="color:#cbd5e1;font-weight:700;">Daily Profit</span>
+          <b class="mono" style="color:#66cc88;" id="calc-daily">0.0000 USDT</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;">
+          <span style="color:#cbd5e1;font-weight:700;">10-Day Total</span>
+          <b class="mono" style="color:var(--gold);" id="calc-total">0.0000 USDT</b>
+        </div>
+      </div>
+
+      <button type="button" class="btn btn-gold" onclick="goToSelectCrypto()">Continue to Payment</button>
+    </div>
+
+    <div class="box">
+      <div class="box-title"><h3 class="title">Deposit History</h3></div>
+      <div id="deposit-history-list"></div>
+    </div>
+  </section>
+
+  <!-- 6. SELECT COIN -->
+  <section id="page-select-crypto" class="page">
+    <div class="box">
+      <div class="box-title">
+        <h3 class="title">Select Asset</h3>
+        <button type="button" class="tag-btn" onclick="goPage('deposit')">Back</button>
+      </div>
+
+      <div class="coins-list">
+        <div class="coin-tile" onclick="selectCryptoOption('USDT (BEP-20)', 'USDT (BEP-20 BSC)', '0x65e63e0b64838c2f4Bd517B1D88F3FFc654C9635', 'tether', 'USDT')">
+          <img src="https://cryptologos.cc/logos/tether-usdt-logo.png?v=032" alt="USDT BSC">
+          <h4>USDT</h4><span>BEP-20</span>
+        </div>
+        <div class="coin-tile" onclick="selectCryptoOption('TRX (TRC-20)', 'TRX (TRC-20 Tron)', 'TWFCVF2asz9B36cvWJZ4UY5nivhpigQsTM', 'tron', 'TRX')">
+          <img src="https://cryptologos.cc/logos/tron-trx-logo.png?v=032" alt="TRX">
+          <h4>TRX</h4><span>TRC-20</span>
+        </div>
+        <div class="coin-tile" onclick="selectCryptoOption('USDT (TRC-20)', 'USDT (TRC-20 Tron)', 'TWFCVF2asz9B36cvWJZ4UY5nivhpigQsTM', 'tether', 'USDT')">
+          <img src="https://cryptologos.cc/logos/tether-usdt-logo.png?v=032" alt="USDT TRC20">
+          <h4>USDT</h4><span>TRC-20</span>
+        </div>
+        <div class="coin-tile" onclick="selectCryptoOption('Solana (SOL)', 'Solana (SOL)', 'v1bf3uC2DjRK42H5pBYhNjeKFJyoS2Jj1QhLJ7VjuYZ', 'solana', 'SOL')">
+          <img src="https://cryptologos.cc/logos/solana-sol-logo.png?v=032" alt="SOL">
+          <h4>Solana</h4><span>SOL Network</span>
+        </div>
+        <div class="coin-tile" onclick="selectCryptoOption('LTC (Litecoin)', 'LTC (Litecoin Network)', 'ltc1q4wg7f4ce7qlq54rn36le7mylnrxfm9ztvggpdg4f09f6mudze9fq6l6kue', 'litecoin', 'LTC')">
+          <img src="https://cryptologos.cc/logos/litecoin-ltc-logo.png?v=032" alt="LTC">
+          <h4>Litecoin</h4><span>LTC Network</span>
+        </div>
+        <div class="coin-tile" onclick="selectCryptoOption('BNB (BEP-20)', 'BNB (BEP-20 BSC)', '0x65e63e0b64838c2f4Bd517B1D88F3FFc654C9635', 'binancecoin', 'BNB')">
+          <img src="https://cryptologos.cc/logos/bnb-bnb-logo.png?v=032" alt="BNB">
+          <h4>BNB</h4><span>BEP-20</span>
+        </div>
+        <div class="coin-tile" onclick="selectCryptoOption('Toncoin (TON)', 'Toncoin (TON Network)', 'UQDiF4swKYNI3DdAZuA1NluFicBbtP5FquwuxmpBzNUkWDsT', 'the-open-network', 'TON')">
+          <img src="https://cryptologos.cc/logos/toncoin-ton-logo.png?v=032" alt="TON">
+          <h4>Toncoin</h4><span>TON Network</span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Bottom Navigation - balanced fit -->
+<nav class="nav">
+  <div class="nav-inner">
+    <button type="button" class="tab-btn active" id="nav-miner" onclick="goPage('miner')">
+      <i class="fa-solid fa-bolt"></i><span>Mine</span>
+    </button>
+    <button type="button" class="tab-btn" id="nav-tasks" onclick="goPage('tasks')">
+      <i class="fa-solid fa-trophy"></i><span>Quests</span>
+    </button>
+    <button type="button" class="tab-btn" id="nav-earn" onclick="goPage('earn')">
+      <i class="fa-solid fa-user-group"></i><span>Friends</span>
+    </button>
+    <button type="button" class="tab-btn" id="nav-withdraw" onclick="goPage('withdraw')">
+      <i class="fa-solid fa-wallet"></i><span>Wallet</span>
+    </button>
+  </div>
+</nav>
+
+<!-- Payment Bottom Drawer -->
+<div class="modal-bg" id="payment-modal" onclick="if(event.target===this)closePaymentModal()">
+  <div class="modal-drawer">
+    <div class="drawer-handle"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <b class="title" style="color:var(--gold);" id="modal-coin-title">Payment</b>
+      <button type="button" class="tag-btn" onclick="refreshQuote()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+    </div>
+
+    <div style="background:linear-gradient(var(--brown),var(--brown-d));border:2px solid var(--gold);border-radius:16px;padding:12px;text-align:center;margin-bottom:12px;box-shadow:0 3px 0 rgba(0,0,0,.4);">
+      <small style="font-size:11px;font-weight:800;color:#fde68a;">SEND EXACT AMOUNT</small>
+      <div class="mono" style="font-size:21px;font-weight:800;color:var(--gold);margin:4px 0;" id="pay-amount-box">Loading...</div>
+      <small class="mono" style="font-size:11px;color:#fff;" id="pay-usd-note"></small>
+    </div>
+
+    <label style="font-size:11px;font-weight:800;color:#fde68a;" id="modal-address-label">WALLET ADDRESS</label>
+    <input type="text" id="admin-wallet-address" readonly>
+    <button type="button" class="btn btn-soft" style="padding:10px;font-size:12.5px;margin-bottom:12px;" onclick="copyWalletAddress()">
+      <i class="fa-regular fa-copy"></i> Copy Address
+    </button>
+
+    <label style="font-size:11px;font-weight:800;color:#fde68a;">TRANSACTION HASH (TXID)</label>
+    <input type="text" id="deposit-tx-hash" placeholder="Paste transaction hash here...">
+
+    <button type="button" class="btn btn-gold" id="submit-pay-btn" onclick="submitDepositRequest()">Confirm Payment</button>
+  </div>
+</div>
+
+<script>
+const API_URL = "https://unitedpay.onrender.com";
+const PLAN_DAYS = 10;
+const DAILY_PCT = 0.30;
+const STABLE_COINS = ['USDT', 'USDC', 'BUSD', 'DAI'];
+
+if (window.__RX_BLOCKED__) {
+  const gateLink = document.getElementById('open-in-telegram-link');
+  if (gateLink) gateLink.href = `https://t.me/${DEFAULT_BOT_USERNAME}`;
+  fetch(`${API_URL}/api/bot-info`)
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.username && gateLink) {
+        gateLink.href = `https://t.me/${d.username}`;
+      }
+    })
+    .catch(() => {});
+  throw new Error("TELEGRAM_ONLY_ACCESS_REQUIRED");
+}
+
+const CHANNEL_QUESTS = {
+  official: {
+    id: 'task1-btn',
+    label: 'Official Channel',
+    url: 'https://t.me/officialchanelm',
+    rewardGhs: 0.02,
+    storageKey: (uid) => `t_official_${uid}`
+  },
+  payment: {
+    id: 'task2-btn',
+    label: 'Payment Channel',
+    url: 'https://t.me/paymentc12',
+    rewardGhs: 0.02,
+    storageKey: (uid) => `t_payment_${uid}`
+  }
+};
+
+const tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+try {
+  tg?.expand?.();
+  tg?.ready?.();
+  tg?.disableVerticalSwipes?.();
+  tg?.setHeaderColor?.('#080b14');
+  tg?.setBackgroundColor?.('#080b14');
+} catch (e) {}
+
+const userId = Number(TG_AUTH.user.id);
+const username = TG_AUTH.user.username || TG_AUTH.user.first_name || 'Miner';
+let startRef = '';
+try {
+  startRef = String(TG_AUTH.startParam || '').replace(/\D/g, '');
+  if (startRef === String(userId)) startRef = '';
+} catch (e) {}
+
+function renderUserAvatar(name) {
+  const clean = String(name || 'Miner').replace(/^@+/, '').trim();
+  const parts = clean.split(/[\s._-]+/).filter(Boolean);
+  let initials = 'M';
+  if (parts.length >= 2) {
+    initials = (parts[0][0] + parts[1][0]).toUpperCase();
+  } else if (parts[0]) {
+    initials = parts[0].slice(0, 2).toUpperCase();
+  }
+
+  const palettes = [
+    ['#f6cc58', '#c9861b', '#1a1206'],
+    ['#60a5fa', '#1d4ed8', '#ffffff'],
+    ['#66cc88', '#15803d', '#ffffff'],
+    ['#f472b6', '#be185d', '#ffffff'],
+    ['#c084fc', '#6d28d9', '#ffffff'],
+    ['#fb923c', '#c2410c', '#ffffff']
+  ];
+  let hash = 0;
+  for (let i = 0; i < clean.length; i++) {
+    hash = clean.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const [c1, c2, fg] = palettes[Math.abs(hash) % palettes.length];
+
+  const av = document.getElementById('user-avatar');
+  if (av) {
+    av.textContent = initials;
+    av.style.background = `linear-gradient(135deg, ${c1}, ${c2})`;
+    av.style.color = fg;
+  }
+}
+
+document.getElementById('user-display-name').textContent = username;
+document.getElementById('user-id-text').textContent = 'ID ' + userId;
+document.getElementById('ref-code-text').textContent = String(userId);
+renderUserAvatar(username);
+
+setTimeout(() => {
+  const sp = document.getElementById('splash');
+  if (sp) { sp.classList.add('hide'); setTimeout(() => sp.remove(), 450); }
+}, 1800);
+
+// Audio
+let soundOn = localStorage.getItem('rx_mining_sound') !== '0';
+let audioCtx = null;
+function playBeep(freq = 420, ms = 0.05) {
+  if (!soundOn) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.07, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + ms);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + ms);
+  } catch (e) {}
+}
+function toggleSound() {
+  soundOn = !soundOn;
+  try { localStorage.setItem('rx_mining_sound', soundOn ? '1' : '0'); } catch (e) {}
+  document.getElementById('sound-toggle').innerHTML = soundOn
+    ? '<i class="fa-solid fa-volume-high"></i>'
+    : '<i class="fa-solid fa-volume-xmark"></i>';
+  playBeep(500, 0.06);
+  showToast(soundOn ? 'Sound ON' : 'Sound OFF');
+}
+document.getElementById('sound-toggle').innerHTML = soundOn
+  ? '<i class="fa-solid fa-volume-high"></i>'
+  : '<i class="fa-solid fa-volume-xmark"></i>';
+
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  el.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+/* Professional Pop-up Modal */
+let actionPopupCallback = null;
+function openActionPopup({ type = 'claim', title, status, statusTone = 'ok', descHtml, btnText = 'GOT IT >', onClose = null }) {
+  const bg = document.getElementById('action-popup');
+  const badge = document.getElementById('ap-badge');
+  const icon = document.getElementById('ap-icon');
+  const titleEl = document.getElementById('ap-title');
+  const statusEl = document.getElementById('ap-status');
+  const descEl = document.getElementById('ap-desc');
+  const btnEl = document.getElementById('ap-btn');
+
+  badge.className = 'ap-badge ' + type;
+  if (type === 'deposit') icon.className = 'fa-solid fa-bolt';
+  else if (type === 'withdraw') icon.className = 'fa-solid fa-paper-plane';
+  else if (type === 'info') icon.className = 'fa-solid fa-circle-check';
+  else icon.className = 'fa-solid fa-coins';
+
+  titleEl.textContent = title;
+  statusEl.textContent = status;
+  statusEl.className = 'ap-status ' + statusTone;
+  descEl.innerHTML = descHtml;
+  btnEl.textContent = btnText;
+  actionPopupCallback = typeof onClose === 'function' ? onClose : null;
+
+  bg.classList.add('open');
+  document.body.classList.add('no-scroll');
+}
+
+function closeActionPopup() {
+  const bg = document.getElementById('action-popup');
+  bg.classList.remove('open');
+  if (!document.getElementById('payment-modal')?.classList.contains('open')) {
+    document.body.classList.remove('no-scroll');
+  }
+  const cb = actionPopupCallback;
+  actionPopupCallback = null;
+  if (cb) cb();
+}
+
+function goPage(name) {
+  playBeep(380, 0.04);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name)?.classList.add('active');
+  document.getElementById('nav-' + name)?.classList.add('active');
+}
+
+// App State (USDT BEP-20)
+let BOT_USERNAME = DEFAULT_BOT_USERNAME;
+let inviteLinkURL = "";
+let liveUsdtBep20PriceUSD = 1.00;
+let mainBalanceUSDT = 0;
+let pendingBalanceUSDT = 0;
+let ghsPower = 0;
+let serverPendingUsd = 0;
+let serverPendingUsdt = 0;
+let serverPendingAt = Date.now();
+let dailyUsdRate = 0.01;
+let claiming = false;
+let userDataObj = null;
+let depositHistory = [];
+let withdrawHistory = [];
+let currentLevel = 1;
+
+let selectedDepositAmountUSD = 1;
+let finalCalculatedCoinAmount = 0;
+let selectedCoinName = 'USDT (BEP-20)';
+let selectedCoinSymbol = 'USDT';
+let quoteToken = 0;
+let lastSelectArgs = null;
+
+const questStates = {
+  official: localStorage.getItem(CHANNEL_QUESTS.official.storageKey(userId)) || 'JOIN',
+  payment: localStorage.getItem(CHANNEL_QUESTS.payment.storageKey(userId)) || 'JOIN'
+};
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function applyBotLinks() {
+  inviteLinkURL = `https://t.me/${BOT_USERNAME}?start=${userId}`;
+  document.getElementById('ref-link').textContent = inviteLinkURL;
+  const msg = encodeURIComponent("Join RX MINING Cloud Mining and earn free USDT (BEP-20)!");
+  const enc = encodeURIComponent(inviteLinkURL);
+  document.getElementById('share-tg').href = `https://t.me/share/url?url=${enc}&text=${msg}`;
+  document.getElementById('share-wa').href = `https://api.whatsapp.com/send?text=${msg}%20${enc}`;
+  document.getElementById('share-tw').href = `https://twitter.com/intent/tweet?text=${msg}&url=${enc}`;
+  document.getElementById('share-fb').href = `https://www.facebook.com/sharer/sharer.php?u=${enc}`;
+}
+applyBotLinks();
+fetch(`${API_URL}/api/bot-info`).then(r => r.json()).then(d => {
+  if (d?.username) { BOT_USERNAME = d.username; applyBotLinks(); }
+}).catch(() => {});
+
+function shareTelegramNative() {
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLinkURL)}&text=${encodeURIComponent("Join RX MINING Cloud Mining and earn free USDT (BEP-20)!")}`;
+  try {
+    if (tg?.openTelegramLink) tg.openTelegramLink(shareUrl);
+    else window.open(shareUrl, '_blank');
+  } catch (e) {
+    window.open(shareUrl, '_blank');
+  }
+}
+
+function copyCode() { navigator.clipboard?.writeText(String(userId)).catch(() => {}); showToast('Partner code copied'); }
+function copyInvite() { navigator.clipboard?.writeText(inviteLinkURL).catch(() => {}); showToast('Invite link copied'); }
+
+async function updateLivePrice() {
+  try {
+    const r = await fetch(`${API_URL}/api/quote?coin=${encodeURIComponent('USDT (BEP-20)')}`);
+    const d = await r.json();
+    if (d?.success && Number(d.priceUsd) > 0) {
+      liveUsdtBep20PriceUSD = Number(d.priceUsd);
+    } else {
+      liveUsdtBep20PriceUSD = 1.00;
+    }
+    updateUI();
+  } catch (e) {
+    liveUsdtBep20PriceUSD = 1.00;
+    updateUI();
+  }
+}
+updateLivePrice();
+setInterval(updateLivePrice, 30000);
+
+setInterval(() => {
+  const price = liveUsdtBep20PriceUSD || 1.00;
+  const elapsed = (Date.now() - serverPendingAt) / 1000;
+  pendingBalanceUSDT = Math.max(0, serverPendingUsdt + elapsed * (dailyUsdRate / 86400) / price);
+  document.getElementById('pending-balance').textContent = pendingBalanceUSDT.toFixed(8);
+}, 1000);
+
+function updateUI() {
+  const p = liveUsdtBep20PriceUSD || 1.00;
+  document.getElementById('ghs-power').textContent = ghsPower.toFixed(2);
+  document.getElementById('main-balance').textContent = mainBalanceUSDT.toFixed(8);
+  document.getElementById('withdraw-balance').textContent = mainBalanceUSDT.toFixed(8);
+  document.getElementById('home-usd-val').textContent = (mainBalanceUSDT * p).toFixed(2);
+  document.getElementById('withdraw-dollar-val').textContent = (mainBalanceUSDT * p).toFixed(2);
+  document.getElementById('bep20-rate-tag').textContent = `1 USDT = $${p.toFixed(2)}`;
+  document.getElementById('hash').textContent = (ghsPower * 0.12).toFixed(1) + ' TH/s';
+
+  const dailyUsdt = (dailyUsdRate / p).toFixed(4);
+  document.getElementById('daily-rate-display').textContent = `${dailyUsdt} USDT`;
+  document.getElementById('delta-rate').textContent = `+${dailyUsdt} USDT/d`;
+  calculateGHS();
+  checkWithdrawAmt(true);
+}
+
+/* Withdraw Validation & Helpers */
+function checkWithdrawAddr() {
+  const addr = document.getElementById('withdraw-address');
+  const box = document.getElementById('addrBox');
+  const addrMsg = document.getElementById('addrMsg');
+  const v = addr.value.trim();
+
+  box.className = 'w-fld';
+  addrMsg.textContent = '';
+  addrMsg.style.color = '#cfd6f5';
+
+  if (!v) return false;
+  if (/^0x[a-fA-F0-9]{40}$/.test(v)) {
+    box.className = 'w-fld ok';
+    addrMsg.textContent = 'Verified BEP-20 address';
+    addrMsg.style.color = '#66cc88';
+    return true;
+  }
+  box.className = 'w-fld bad';
+  addrMsg.textContent = 'Enter a valid 42-character address starting with 0x';
+  addrMsg.style.color = '#ff8a8a';
+  return false;
+}
+
+function checkWithdrawAmt(silent = false) {
+  const amt = document.getElementById('withdraw-amount');
+  const box = document.getElementById('amtBox');
+  const amtMsg = document.getElementById('amtMsg');
+  const p = liveUsdtBep20PriceUSD || 1.00;
+  const n = parseFloat(amt.value);
+
+  box.className = 'w-fld';
+  amtMsg.style.color = '#cfd6f5';
+
+  if (isNaN(n)) {
+    amtMsg.textContent = 'Enter an amount';
+    if (!silent) box.className = 'w-fld bad';
+    return false;
+  }
+
+  amtMsg.textContent = '≈ $' + (n * p).toFixed(2) + ' USD';
+
+  if (n < 1) {
+    amtMsg.textContent = 'Minimum is 1.00 USDT';
+    amtMsg.style.color = '#ff8a8a';
+    if (!silent) box.className = 'w-fld bad';
+    return false;
+  }
+  if (n > mainBalanceUSDT) {
+    amtMsg.textContent = 'Amount is more than your balance';
+    amtMsg.style.color = '#ff8a8a';
+    if (!silent) box.className = 'w-fld bad';
+    return false;
+  }
+  if (!silent) box.className = 'w-fld ok';
+  return true;
+}
+
+function setMaxWithdraw() {
+  document.getElementById('withdraw-amount').value = mainBalanceUSDT.toFixed(8);
+  checkWithdrawAmt();
+}
+
+function pasteAddress() {
+  if (!navigator.clipboard) {
+    showToast('Long-press input to paste');
+    return;
+  }
+  navigator.clipboard.readText().then(t => {
+    document.getElementById('withdraw-address').value = t.trim();
+    checkWithdrawAddr();
+    showToast('Address pasted');
+  }).catch(() => showToast('Long-press input to paste'));
+}
+
+async function updateServerGHS(newGhs) {
+  try {
+    const r = await fetch(`${API_URL}/api/update-ghs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, ghs: newGhs })
+    });
+    const d = await r.json();
+    if (d?.success) { ghsPower = Number(d.ghs) || newGhs; updateUI(); }
+  } catch (e) {}
+}
+
+function updateChannelQuestUI() {
+  Object.keys(CHANNEL_QUESTS).forEach((key) => {
+    const cfg = CHANNEL_QUESTS[key];
+    const btn = document.getElementById(cfg.id);
+    const st = questStates[key];
+    if (!btn) return;
+    if (st === 'CHECK') {
+      btn.textContent = 'CHECK JOIN';
+      btn.className = 'btn btn-dark';
+    } else if (st === 'CLAIM') {
+      btn.textContent = `CLAIM +${cfg.rewardGhs.toFixed(2)} GHS`;
+      btn.className = 'btn btn-green';
+    } else if (st === 'CLAIMED') {
+      btn.textContent = 'COMPLETED';
+      btn.className = 'btn btn-muted';
+    } else {
+      btn.textContent = 'JOIN CHANNEL';
+      btn.className = 'btn btn-gold';
+    }
+  });
+}
+updateChannelQuestUI();
+
+async function handleChannelQuest(key) {
+  const cfg = CHANNEL_QUESTS[key];
+  if (!cfg) return;
+  const st = questStates[key];
+
+  if (st === 'CLAIMED') {
+    showToast('Reward already claimed');
+    return;
+  }
+
+  if (st === 'JOIN') {
+    try { tg?.openTelegramLink ? tg.openTelegramLink(cfg.url) : window.open(cfg.url, '_blank'); }
+    catch (e) { window.open(cfg.url, '_blank'); }
+    questStates[key] = 'CHECK';
+    localStorage.setItem(cfg.storageKey(userId), 'CHECK');
+    updateChannelQuestUI();
+    showToast(`Opened ${cfg.label}. Tap CHECK JOIN`);
+  } else if (st === 'CHECK') {
+    try {
+      const r = await fetch(`${API_URL}/api/task/channel-status/${userId}`);
+      const d = await r.json();
+      if (d?.verified && !d.joined) {
+        showToast('Join channel first');
+        questStates[key] = 'JOIN';
+        localStorage.setItem(cfg.storageKey(userId), 'JOIN');
+        updateChannelQuestUI();
+        return;
+      }
+    } catch (e) {}
+    questStates[key] = 'CLAIM';
+    localStorage.setItem(cfg.storageKey(userId), 'CLAIM');
+    updateChannelQuestUI();
+    showToast('Verified! Tap CLAIM');
+  } else if (st === 'CLAIM') {
+    ghsPower += cfg.rewardGhs;
+    questStates[key] = 'CLAIMED';
+    localStorage.setItem(cfg.storageKey(userId), 'CLAIMED');
+    updateChannelQuestUI();
+    await updateServerGHS(ghsPower);
+    playBeep(650, 0.12);
+    openActionPopup({
+      type: 'claim',
+      title: 'Quest Reward',
+      status: 'Claimed',
+      statusTone: 'ok',
+      descHtml: `${esc(cfg.label)} quest: <b>+${cfg.rewardGhs.toFixed(2)} GHS</b> hash power is now added.`
+    });
+  }
+}
+
+async function claimMining() {
+  if (claiming) return;
+  if (pendingBalanceUSDT <= 0) { showToast('Nothing to claim yet'); return; }
+  claiming = true;
+  try {
+    const r = await fetch(`${API_URL}/api/claim`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId })
+    });
+    const d = await r.json();
+    if (d?.success) {
+      mainBalanceUSDT = Number(d.balance) || mainBalanceUSDT;
+      serverPendingUsd = 0; serverPendingUsdt = 0; serverPendingAt = Date.now();
+      updateUI();
+      playBeep(700, 0.12);
+      const claimedAmt = Number(d.claimedUsdt !== undefined ? d.claimedUsdt : (d.claimedTrx || 0));
+      openActionPopup({
+        type: 'claim',
+        title: 'Profit Successfully',
+        status: 'Claimed',
+        statusTone: 'ok',
+        descHtml: `Mining profit: <b>+${claimedAmt.toFixed(4)} USDT</b> is now added to your balance.`
+      });
+    } else {
+      showToast(d?.message || 'Claim failed');
+    }
+  } catch (e) {
+    showToast('Network error');
+  } finally {
+    claiming = false;
+    fetchUserData();
+  }
+}
+
+function selectLevel(lvl) {
+  currentLevel = lvl;
+  [1, 2, 3].forEach(n => document.getElementById('lvl-card-' + n).classList.toggle('active', n === lvl));
+  const pct = lvl === 1 ? '15%' : (lvl === 2 ? '3%' : '1%');
+  document.getElementById('active-level-label').textContent = `Level ${lvl} - ${pct} Commission`;
+  updateReferralUI();
+}
+
+function updateReferralUI() {
+  if (!userDataObj) return;
+  const p = liveUsdtBep20PriceUSD || 1.00;
+  const l1 = userDataObj.referrals?.level1?.length || 0;
+  const l2 = userDataObj.referrals?.level2?.length || 0;
+  const l3 = userDataObj.referrals?.level3?.length || 0;
+
+  document.getElementById('stat-team-size').textContent = l1 + l2 + l3;
+  document.getElementById('stat-new-members').textContent = l1;
+  document.getElementById('lvl1-count').textContent = `${l1}/0`;
+  document.getElementById('lvl2-count').textContent = `${l2}/0`;
+  document.getElementById('lvl3-count').textContent = `${l3}/0`;
+
+  [1, 2, 3].forEach(n => {
+    const usdt = Number(userDataObj.refEarnings?.[`level${n}`] || 0);
+    document.getElementById(`lvl${n}-income`).textContent = `${usdt.toFixed(4)} USDT`;
+  });
+
+  const cnt = userDataObj.referrals?.[`level${currentLevel}`]?.length || 0;
+  const earn = Number(userDataObj.refEarnings?.[`level${currentLevel}`] || 0);
+  document.getElementById('ref-count').textContent = `${cnt} referrals`;
+  document.getElementById('ref-reward').textContent = `${earn.toFixed(4)} USDT`;
+
+  const t = userDataObj.team;
+  if (t?.registered && t?.active) {
+    document.getElementById('stat-team-size').textContent = t.registered[0] + t.registered[1] + t.registered[2];
+    document.getElementById('stat-team-deposits').textContent = (Number(t.depositsUsd || 0) / p).toFixed(2) + ' USDT';
+    const wUsd = Number(t.withdrawalsUsd || 0);
+    document.getElementById('stat-total-wth').textContent = (wUsd ? wUsd / p : Number(t.totalWithdrawals || 0)).toFixed(2) + ' USDT';
+    for (let n = 1; n <= 3; n++) {
+      document.getElementById('lvl' + n + '-count').textContent = `${t.registered[n - 1]}/${t.active[n - 1]}`;
+    }
+  }
+}
+
+// Ledger Feed
+let ledgerMode = 'wth';
+const coins = [
+  { symbol: 'USDT', usd: 1.0 },
+  { symbol: 'TRX', usd: 0.33 },
+  { symbol: 'SOL', usd: 180.0 },
+  { symbol: 'LTC', usd: 90.0 },
+  { symbol: 'TON', usd: 5.5 }
+];
+let wthList = [];
+let depList = [];
+
+function initLedger() {
+  for (let i = 0; i < 8; i++) {
+    const id = `ID ${50 + Math.floor(Math.random() * 40)}****${10 + Math.floor(Math.random() * 88)}`;
+    wthList.push({ id, amt: (Math.random() * 140 + 2).toFixed(2), sym: 'USDT', date: 'Today' });
+    const c = coins[Math.floor(Math.random() * coins.length)];
+    depList.push({ id, amt: ((Math.random() * 90 + 2) / c.usd).toFixed(c.usd === 1 ? 2 : 4), sym: c.symbol, date: 'Today' });
+  }
+}
+initLedger();
+
+function switchLedger(m) {
+  ledgerMode = m;
+  document.getElementById('seg-wth').classList.toggle('on', m === 'wth');
+  document.getElementById('seg-dep').classList.toggle('on', m === 'dep');
+  renderLedger();
+}
+
+function renderLedger() {
+  const arr = ledgerMode === 'wth' ? wthList : depList;
+  document.getElementById('ledger-list').innerHTML = arr.map(it => `
+    <div class="row-item">
+      <div class="row-left">
+        <div class="row-ico"><i class="fa-solid ${ledgerMode === 'wth' ? 'fa-arrow-up' : 'fa-arrow-down'}"></i></div>
+        <div><b class="mono">${esc(it.id)}</b><small>${esc(it.date)}</small></div>
+      </div>
+      <div class="row-right">
+        <b class="mono">${ledgerMode === 'wth' ? '-' : '+'}${esc(it.amt)} ${esc(it.sym)}</b>
+        <span>PAID</span>
+      </div>
+    </div>
+  `).join('');
+}
+renderLedger();
+
+setInterval(() => {
+  const id = `ID ${50 + Math.floor(Math.random() * 40)}****${10 + Math.floor(Math.random() * 88)}`;
+  if (Math.random() > 0.45) {
+    wthList.unshift({ id, amt: (Math.random() * 140 + 2).toFixed(2), sym: 'USDT', date: 'Just now' });
+    wthList.pop();
+  } else {
+    const c = coins[Math.floor(Math.random() * coins.length)];
+    depList.unshift({ id, amt: ((Math.random() * 90 + 2) / c.usd).toFixed(c.usd === 1 ? 2 : 4), sym: c.symbol, date: 'Just now' });
+    depList.pop();
+  }
+  renderLedger();
+}, 6000);
+
+function renderHistory() {
+  const depBox = document.getElementById('deposit-history-list');
+  depBox.innerHTML = depositHistory.length
+    ? depositHistory.map(it => `<div class="row-item"><div><b class="mono" style="color:#fff;">+${esc(it.displayText || it.amount)}</b><br><small style="color:#cbd5e1;">${esc(it.coin || '')} · ${esc(it.date || '')}</small></div><span style="font-size:11px;font-weight:800;color:var(--gold);text-transform:uppercase;">${esc(it.status || 'pending')}</span></div>`).join('')
+    : `<small style="color:#cbd5e1;display:block;padding:6px 0;font-size:12px;">No deposit requests yet.</small>`;
+
+  const wthBox = document.getElementById('withdraw-history-list');
+  wthBox.innerHTML = withdrawHistory.length
+    ? withdrawHistory.map(it => `<div class="row-item"><div><b class="mono" style="color:#fff;">-${esc(it.displayText || Number(it.amount || 0).toFixed(2) + ' USDT')}</b><br><small style="color:#cbd5e1;">${esc(it.date || '')}</small></div><span style="font-size:11px;font-weight:800;color:#66cc88;text-transform:uppercase;">${esc(it.status || 'pending')}</span></div>`).join('')
+    : `<p style="color:#e6f2ea">No withdrawal requests yet.</p>`;
+}
+
+function calculateGHS() {
+  let usd = parseFloat(document.getElementById('deposit-amount').value) || 0;
+  if (usd > 10000) { usd = 10000; document.getElementById('deposit-amount').value = 10000; }
+  if (usd < 0) usd = 0;
+  document.getElementById('calc-ghs').textContent = usd + ' GHS';
+  const up = liveUsdtBep20PriceUSD || 1.00;
+  const dUsd = usd * DAILY_PCT;
+  document.getElementById('calc-daily').textContent = (dUsd / up).toFixed(4) + ' USDT';
+  document.getElementById('calc-total').textContent = ((dUsd * PLAN_DAYS) / up).toFixed(4) + ' USDT';
+}
+
+function goToSelectCrypto() {
+  const amt = parseFloat(document.getElementById('deposit-amount').value);
+  if (!amt || amt < 1 || amt > 10000) { showToast('Enter amount between $1 and $10,000'); return; }
+  selectedDepositAmountUSD = amt;
+  goPage('select-crypto');
+}
+
+function fmtCoin(n, sym) {
+  const dec = STABLE_COINS.includes(sym) ? 2 : (['BTC', 'ETH', 'BNB'].includes(sym) ? 8 : 6);
+  return Number(n).toFixed(dec);
+}
+
+async function getDepositQuote(coinKey, sym, geckoId, usdt) {
+  try {
+    const r = await fetch(`${API_URL}/api/quote?coin=${encodeURIComponent(coinKey)}&usdt=${usdt}`);
+    const d = await r.json();
+    if (d?.success && d.coinAmount > 0) return { amount: Number(d.coinAmount), symbol: d.symbol || sym, price: d.priceUsd };
+  } catch (e) {}
+  if (STABLE_COINS.includes(sym)) return { amount: Number(usdt.toFixed(2)), symbol: sym, price: 1 };
+  try {
+    const r = await fetch(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`);
+    const d = await r.json();
+    const p = parseFloat(d?.data?.amount);
+    if (p > 0) return { amount: Number((usdt / p).toFixed(6)), symbol: sym, price: p };
+  } catch (e) {}
+  try {
+    const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`);
+    const d = await r.json();
+    const p = d?.[geckoId]?.usd;
+    if (p > 0) return { amount: Number((usdt / p).toFixed(6)), symbol: sym, price: p };
+  } catch (e) {}
+  return null;
+}
+
+function refreshQuote() { if (lastSelectArgs) selectCryptoOption.apply(null, lastSelectArgs); }
+
+async function selectCryptoOption(coinKey, coinTitle, walletAddress, geckoId, symbol) {
+  lastSelectArgs = [coinKey, coinTitle, walletAddress, geckoId, symbol];
+  selectedCoinName = coinKey;
+  selectedCoinSymbol = symbol;
+  finalCalculatedCoinAmount = 0;
+  const tok = ++quoteToken;
+
+  document.getElementById('modal-coin-title').textContent = coinTitle;
+  document.getElementById('pay-amount-box').textContent = 'Fetching rate...';
+  document.getElementById('pay-usd-note').textContent = '';
+  document.getElementById('admin-wallet-address').value = walletAddress;
+  document.getElementById('modal-address-label').textContent = coinTitle + ' ADDRESS';
+  document.getElementById('payment-modal').classList.add('open');
+  document.body.classList.add('no-scroll');
+
+  const btn = document.getElementById('submit-pay-btn');
+  btn.disabled = true;
+  btn.className = 'btn btn-muted';
+  btn.textContent = 'Loading Rate...';
+
+  const q = await getDepositQuote(coinKey, symbol, geckoId, selectedDepositAmountUSD);
+  if (tok !== quoteToken) return;
+  if (!q) {
+    document.getElementById('pay-amount-box').textContent = 'Rate unavailable';
+    return;
+  }
+
+  finalCalculatedCoinAmount = q.amount;
+  selectedCoinSymbol = q.symbol;
+  const amtTxt = fmtCoin(q.amount, q.symbol);
+  document.getElementById('pay-amount-box').textContent = `${amtTxt} ${q.symbol}`;
+  document.getElementById('pay-usd-note').textContent = `≈ $${selectedDepositAmountUSD} USD`;
+
+  btn.disabled = false;
+  btn.className = 'btn btn-gold';
+  btn.textContent = 'Confirm Payment';
+}
+
+function closePaymentModal() {
+  quoteToken++;
+  if (!document.getElementById('action-popup')?.classList.contains('open')) {
+    document.body.classList.remove('no-scroll');
+  }
+  document.getElementById('payment-modal').classList.remove('open');
+}
+
+function copyWalletAddress() {
+  const inp = document.getElementById('admin-wallet-address');
+  inp.select();
+  navigator.clipboard?.writeText(inp.value).catch(() => {});
+  showToast('Wallet address copied');
+}
+
+async function submitDepositRequest() {
+  const txHash = document.getElementById('deposit-tx-hash').value.trim();
+  if (!txHash) { showToast('Enter Transaction Hash (TxID)'); return; }
+  if (!(finalCalculatedCoinAmount > 0)) { showToast('Wait for rate to load'); return; }
+
+  const btn = document.getElementById('submit-pay-btn');
+  btn.disabled = true;
+  btn.className = 'btn btn-muted';
+  btn.textContent = 'Submitting...';
+
+  const sentAmtStr = `${fmtCoin(finalCalculatedCoinAmount, selectedCoinSymbol)} ${selectedCoinSymbol}`;
+
+  try {
+    const r = await fetch(`${API_URL}/api/deposit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId, username,
+        amount: String(finalCalculatedCoinAmount),
+        usdtAmount: selectedDepositAmountUSD,
+        coin: selectedCoinName,
+        txHash
+      })
+    });
+    const d = await r.json();
+    if (d?.success) {
+      document.getElementById('deposit-tx-hash').value = '';
+      closePaymentModal();
+      fetchUserData();
+      playBeep(700, 0.12);
+      openActionPopup({
+        type: 'deposit',
+        title: 'Deposit Request',
+        status: 'Submitted',
+        statusTone: 'ok',
+        descHtml: `Deposit of <b>${esc(sentAmtStr)}</b> (≈ $${esc(selectedDepositAmountUSD)}) is under verification.`,
+        onClose: () => goPage('miner')
+      });
+    } else {
+      showToast(d?.message || 'Failed to submit');
+      btn.disabled = false; btn.className = 'btn btn-gold'; btn.textContent = 'Confirm Payment';
+    }
+  } catch (e) {
+    showToast('Network error');
+    btn.disabled = false; btn.className = 'btn btn-gold'; btn.textContent = 'Confirm Payment';
+  }
+}
+
+async function requestWithdraw() {
+  const addrInput = document.getElementById('withdraw-address');
+  const amtInput = document.getElementById('withdraw-amount');
+  const addrMsg = document.getElementById('addrMsg');
+  const box = document.getElementById('addrBox');
+
+  if (!addrInput.value.trim()) {
+    box.className = 'w-fld bad';
+    addrMsg.textContent = 'Enter your wallet address';
+    addrMsg.style.color = '#ff8a8a';
+    return;
+  }
+
+  const isAddrOk = checkWithdrawAddr();
+  const isAmtOk = checkWithdrawAmt();
+  if (!isAddrOk || !isAmtOk) return;
+
+  const addr = addrInput.value.trim();
+  const amt = parseFloat(amtInput.value);
+
+  const btn = document.getElementById('go');
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+
+  try {
+    const r = await fetch(`${API_URL}/api/withdraw`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, username, address: addr, amount: amt, currency: 'USDT (BEP-20)' })
+    });
+    const d = await r.json();
+    if (d?.success) {
+      amtInput.value = '';
+      checkWithdrawAmt(true);
+      fetchUserData();
+      playBeep(700, 0.12);
+      openActionPopup({
+        type: 'withdraw',
+        title: 'Withdrawal Request',
+        status: 'Submitted',
+        statusTone: 'ok',
+        descHtml: `Withdrawal of <b>${amt.toFixed(4)} USDT (BEP-20)</b> is now being processed.`
+      });
+    } else {
+      showToast(d?.message || 'Withdrawal failed');
+    }
+  } catch (e) {
+    showToast('Network error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send withdrawal';
+  }
+}
+
+async function fetchUserData() {
+  try {
+    const url = `${API_URL}/api/user/${userId}${startRef ? `?ref=${startRef}` : ''}`;
+    const r = await fetch(url);
+    const d = await r.json();
+    if (!d) return;
+    userDataObj = d;
+    if (!claiming && d.balance !== undefined) mainBalanceUSDT = Number(d.balance) || 0;
+    ghsPower = Number(d.ghs) || 0;
+    if (Number(d.usdtBep20Price) > 0) liveUsdtBep20PriceUSD = Number(d.usdtBep20Price);
+    else if (Number(d.usdtPrice) > 0) liveUsdtBep20PriceUSD = Number(d.usdtPrice);
+    else liveUsdtBep20PriceUSD = 1.00;
+
+    if (!claiming) {
+      serverPendingUsd = Number(d.pendingUsd) || 0;
+      serverPendingUsdt = d.pendingUsdt !== undefined
+        ? (Number(d.pendingUsdt) || 0)
+        : (d.pendingTrx !== undefined ? (Number(d.pendingTrx) || 0) : serverPendingUsd / (liveUsdtBep20PriceUSD || 1.00));
+      serverPendingAt = Date.now();
+    }
+    if (d.dailyUsd !== undefined) dailyUsdRate = Number(d.dailyUsd) || 0;
+    withdrawHistory = Array.isArray(d.withdrawals) ? d.withdrawals : [];
+    depositHistory = Array.isArray(d.deposits) ? d.deposits : [];
+
+    updateUI();
+    renderHistory();
+    updateReferralUI();
+  } catch (e) {}
+}
+
+fetchUserData();
+setInterval(fetchUserData, 10000);
+updateUI();
+renderHistory();
+</script>
+</body>
+</html>
