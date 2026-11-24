@@ -412,6 +412,16 @@ const pendingRequestSchema = new mongoose.Schema({
 });
 const PendingRequest = mongoose.model('PendingRequest', pendingRequestSchema);
 
+// Public ledger: ONLY real, admin-approved deposits/withdrawals (masked user id)
+const ledgerSchema = new mongoose.Schema({
+    type: { type: String, required: true },
+    maskedId: { type: String },
+    amount: { type: String },
+    symbol: { type: String },
+    ts: { type: Number, default: () => Date.now(), index: true }
+});
+const LedgerEntry = mongoose.model('LedgerEntry', ledgerSchema);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -767,9 +777,28 @@ async function closeRequest(reqDoc, u, reqId) {
     }
 }
 
+// Mask a Telegram user id for public posts: first 3 digits ... last 4 digits (e.g. 333......9999)
+function maskUserId(id) {
+    const t = String(id || '');
+    if (t.length <= 7) return esc(t.slice(0, 1) + '......' + t.slice(-2));
+    return esc(t.slice(0, 3) + '......' + t.slice(-4));
+}
+
 // Public proof post in the payments channel when admin approves a request
 async function postToPaymentChannel(reqDoc, u) {
     try {
+        // record in public ledger (real approved request only)
+        try {
+            const sym = String(reqDoc.coinSymbol || (reqDoc.coin || 'USDT').split(/[ (]/)[0] || 'USDT').toUpperCase();
+            const amtNum = String(reqAmountLabel(reqDoc)).replace(/[^0-9.]/g, '') || '0';
+            await LedgerEntry.create({
+                type: reqDoc.type === 'withdraw' ? 'withdraw' : 'deposit',
+                maskedId: String(reqDoc.userId || '').length > 7
+                    ? String(reqDoc.userId).slice(0, 3) + '......' + String(reqDoc.userId).slice(-4)
+                    : String(reqDoc.userId || '').slice(0, 1) + '......' + String(reqDoc.userId || '').slice(-2),
+                amount: amtNum, symbol: sym, ts: Date.now()
+            });
+        } catch (le) { console.log('ledger insert error:', le && le.message); }
         if (!PAYMENT_POST_CHAT) return;
         const coin = esc(reqDoc.coin || reqDoc.coinSymbol || 'USDT (BEP-20)');
         const amount = esc(reqAmountLabel(reqDoc));
@@ -778,7 +807,7 @@ async function postToPaymentChannel(reqDoc, u) {
             text =
 `📥 <b>RX Mining | New Deposit Approved</b>
 
-🆔 ID: "${esc(reqDoc.userId)}"
+🆔 ID: <code>${maskUserId(reqDoc.userId)}</code>
 
 🪙 Coin: <b>${coin}</b>
 💰 Amount: <b>${amount}</b>
@@ -792,7 +821,7 @@ async function postToPaymentChannel(reqDoc, u) {
             text =
 `🎉 <b>RX Mining | New Withdraw Processed!</b>
 
-🆔 ID: "${esc(reqDoc.userId)}"
+🆔 ID: <code>${maskUserId(reqDoc.userId)}</code>
 
 🪙 Coin: <b>${coin}</b>
 💰 Amount: <b>${amount}</b>
@@ -1919,6 +1948,20 @@ app.post('/api/withdraw', requireTg, async (req, res) => {
 });
 
 let botUsernameCache = null;
+// Public live ledger — real approved payments only
+app.get('/api/ledger', async (req, res) => {
+    try {
+        const [dep, wth] = await Promise.all([
+            LedgerEntry.find({ type: 'deposit' }).sort({ ts: -1 }).limit(8).lean(),
+            LedgerEntry.find({ type: 'withdraw' }).sort({ ts: -1 }).limit(8).lean()
+        ]);
+        const map = x => ({ id: x.maskedId, amt: x.amount, sym: x.symbol, ts: x.ts });
+        res.json({ success: true, deposits: dep.map(map), withdrawals: wth.map(map) });
+    } catch (e) {
+        res.status(500).json({ success: false, deposits: [], withdrawals: [] });
+    }
+});
+
 app.get('/api/bot-info', async (req, res) => {
     try {
         if (!botUsernameCache) {
