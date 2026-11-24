@@ -66,7 +66,7 @@ if (!TG_AUTH.allowed) {
   document.documentElement.classList.add('tg-blocked');
 } else {
   window.__RX_BLOCKED__ = false;
-  var APP_BUILD = "2026-11-24-rx-mining-v1";
+  var APP_BUILD = "2026-11-24-rx-mining-v2";
   (function () {
     try {
       fetch(location.pathname + '?nocache=' + Date.now(), { cache: 'no-store' })
@@ -1213,7 +1213,7 @@ html.tg-blocked #tg-only-gate {
 </div>
 
 <script>
-const API_URL = "https://unitedpay.onrender.com";
+const API_URL = "https://rx-mining.onrender.com";
 const PLAN_DAYS = 10;
 const DAILY_PCT = 0.30;
 const STABLE_COINS = ['USDT', 'USDC', 'BUSD', 'DAI'];
@@ -1257,6 +1257,21 @@ try {
   tg?.setHeaderColor?.('#080b14');
   tg?.setBackgroundColor?.('#080b14');
 } catch (e) {}
+
+// Signed Telegram initData: server verifies it so nobody can act as another user
+const TG_INIT_DATA = (function () {
+  try {
+    if (tg && typeof tg.initData === 'string' && tg.initData) return tg.initData;
+    const hp = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+    return hp.get('tgWebAppData') || '';
+  } catch (e) { return ''; }
+})();
+
+function apiFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers, { 'X-Tg-Init-Data': TG_INIT_DATA });
+  return fetch(url, opts);
+}
 
 const userId = Number(TG_AUTH.user.id);
 const username = TG_AUTH.user.username || TG_AUTH.user.first_name || 'Miner';
@@ -1413,6 +1428,8 @@ let userDataObj = null;
 let depositHistory = [];
 let withdrawHistory = [];
 let currentLevel = 1;
+let bannedShown = false;
+let authWarned = false;
 
 let selectedDepositAmountUSD = 1;
 let finalCalculatedCoinAmount = 0;
@@ -1529,7 +1546,7 @@ function checkWithdrawAmt(silent = false) {
   const box = document.getElementById('amtBox');
   const amtMsg = document.getElementById('amtMsg');
   const p = liveUsdtBep20PriceUSD || 1.00;
-  const n = parseFloat(amt.value);
+  const n = parseFloat(String(amt.value).replace(',', '.'));
 
   box.className = 'w-fld';
   amtMsg.style.color = '#cfd6f5';
@@ -1559,7 +1576,9 @@ function checkWithdrawAmt(silent = false) {
 }
 
 function setMaxWithdraw() {
-  document.getElementById('withdraw-amount').value = mainBalanceUSDT.toFixed(8);
+  // round DOWN to 8 decimals so MAX never exceeds the real balance
+  const floored = Math.floor(mainBalanceUSDT * 1e8) / 1e8;
+  document.getElementById('withdraw-amount').value = floored.toFixed(8);
   checkWithdrawAmt();
 }
 
@@ -1577,7 +1596,7 @@ function pasteAddress() {
 
 async function updateServerGHS(newGhs) {
   try {
-    const r = await fetch(`${API_URL}/api/update-ghs`, {
+    const r = await apiFetch(`${API_URL}/api/update-ghs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, ghs: newGhs })
@@ -1629,7 +1648,7 @@ async function handleChannelQuest(key) {
     showToast(`Opened ${cfg.label}. Tap CHECK JOIN`);
   } else if (st === 'CHECK') {
     try {
-      const r = await fetch(`${API_URL}/api/task/channel-status/${userId}`);
+      const r = await apiFetch(`${API_URL}/api/task/channel-status/${userId}`);
       const d = await r.json();
       if (d?.verified && !d.joined) {
         showToast('Join channel first');
@@ -1665,7 +1684,7 @@ async function claimMining() {
   if (pendingBalanceUSDT <= 0) { showToast('Nothing to claim yet'); return; }
   claiming = true;
   try {
-    const r = await fetch(`${API_URL}/api/claim`, {
+    const r = await apiFetch(`${API_URL}/api/claim`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId })
@@ -1922,7 +1941,7 @@ async function submitDepositRequest() {
   const sentAmtStr = `${fmtCoin(finalCalculatedCoinAmount, selectedCoinSymbol)} ${selectedCoinSymbol}`;
 
   try {
-    const r = await fetch(`${API_URL}/api/deposit`, {
+    const r = await apiFetch(`${API_URL}/api/deposit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1975,17 +1994,17 @@ async function requestWithdraw() {
   if (!isAddrOk || !isAmtOk) return;
 
   const addr = addrInput.value.trim();
-  const amt = parseFloat(amtInput.value);
+  const amt = parseFloat(String(amtInput.value).replace(',', '.'));
 
   const btn = document.getElementById('go');
   btn.disabled = true;
   btn.textContent = 'Processing...';
 
   try {
-    const r = await fetch(`${API_URL}/api/withdraw`, {
+    const r = await apiFetch(`${API_URL}/api/withdraw`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, username, address: addr, amount: amt, currency: 'USDT (BEP-20)' })
+      body: JSON.stringify({ userId, username, address: addr, amount: amt, coin: 'USDT (BEP-20)' })
     });
     const d = await r.json();
     if (d?.success) {
@@ -2014,9 +2033,25 @@ async function requestWithdraw() {
 async function fetchUserData() {
   try {
     const url = `${API_URL}/api/user/${userId}${startRef ? `?ref=${startRef}` : ''}`;
-    const r = await fetch(url);
+    const r = await apiFetch(url);
     const d = await r.json();
     if (!d) return;
+
+    if (d.isBanned) {
+      if (!bannedShown) {
+        bannedShown = true;
+        openActionPopup({
+          type: 'info', title: 'Account Banned', status: 'Restricted', statusTone: 'warn',
+          descHtml: 'Your account has been banned by the admin.'
+        });
+      }
+      return;
+    }
+    if (d.success === false) {
+      if (!authWarned) { authWarned = true; showToast(d.message || 'Could not load data'); }
+      return;
+    }
+
     userDataObj = d;
     if (!claiming && d.balance !== undefined) mainBalanceUSDT = Number(d.balance) || 0;
     ghsPower = Number(d.ghs) || 0;
