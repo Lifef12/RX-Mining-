@@ -1852,15 +1852,24 @@ const coins = [
 let wthList = [];
 let depList = [];
 
-function initLedger() {
-  for (let i = 0; i < 8; i++) {
-    const id = `ID ${50 + Math.floor(Math.random() * 40)}****${10 + Math.floor(Math.random() * 88)}`;
-    wthList.push({ id, amt: (Math.random() * 140 + 2).toFixed(2), sym: 'USDT', date: 'Today' });
-    const c = coins[Math.floor(Math.random() * coins.length)];
-    depList.push({ id, amt: ((Math.random() * 90 + 2) / c.usd).toFixed(c.usd === 1 ? 2 : 4), sym: c.symbol, date: 'Today' });
-  }
+// Real ledger: only admin-approved deposits / withdrawals from the server
+function ledgerAgo(ts) {
+  const m = Math.floor((Date.now() - Number(ts || 0)) / 60000);
+  if (m < 1) return 'Just now';
+  if (m < 60) return m + ' min ago';
+  const hr = Math.floor(m / 60);
+  if (hr < 24) return hr + ' h ago';
+  return Math.floor(hr / 24) + ' d ago';
 }
-initLedger();
+async function loadLedger() {
+  try {
+    const r = await fetch(`${API_URL}/api/ledger`);
+    const d = await r.json();
+    wthList = (d.withdrawals || []).map(x => ({ id: 'ID ' + x.id, amt: x.amt, sym: x.sym || 'USDT', ts: x.ts }));
+    depList = (d.deposits || []).map(x => ({ id: 'ID ' + x.id, amt: x.amt, sym: x.sym || 'USDT', ts: x.ts }));
+  } catch (e) {}
+  renderLedger();
+}
 
 function switchLedger(m) {
   ledgerMode = m;
@@ -1871,33 +1880,22 @@ function switchLedger(m) {
 
 function renderLedger() {
   const arr = ledgerMode === 'wth' ? wthList : depList;
-  document.getElementById('ledger-list').innerHTML = arr.map(it => `
+  document.getElementById('ledger-list').innerHTML = arr.length ? arr.map(it => `
     <div class="row-item">
       <div class="row-left">
         <div class="row-ico"><i class="fa-solid ${ledgerMode === 'wth' ? 'fa-arrow-up' : 'fa-arrow-down'}"></i></div>
-        <div><b class="mono">${esc(it.id)}</b><small>${esc(it.date)}</small></div>
+        <div><b class="mono">${esc(it.id)}</b><small>${esc(ledgerAgo(it.ts))}</small></div>
       </div>
       <div class="row-right">
         <b class="mono">${ledgerMode === 'wth' ? '-' : '+'}${esc(it.amt)} ${esc(it.sym)}</b>
         ${statusBadge('PAID')}
       </div>
     </div>
-  `).join('');
+  `).join('') : '<small style="display:block;padding:10px 0;color:var(--tx2);font-size:12px;">No approved payments yet.</small>';
 }
 renderLedger();
-
-setInterval(() => {
-  const id = `ID ${50 + Math.floor(Math.random() * 40)}****${10 + Math.floor(Math.random() * 88)}`;
-  if (Math.random() > 0.45) {
-    wthList.unshift({ id, amt: (Math.random() * 140 + 2).toFixed(2), sym: 'USDT', date: 'Just now' });
-    wthList.pop();
-  } else {
-    const c = coins[Math.floor(Math.random() * coins.length)];
-    depList.unshift({ id, amt: ((Math.random() * 90 + 2) / c.usd).toFixed(c.usd === 1 ? 2 : 4), sym: c.symbol, date: 'Just now' });
-    depList.pop();
-  }
-  renderLedger();
-}, 6000);
+loadLedger();
+setInterval(loadLedger, 30000);
 
 function histPill(s) {
   const st = String(s || 'pending').toLowerCase();
