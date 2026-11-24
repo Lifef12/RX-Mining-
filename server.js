@@ -39,6 +39,13 @@ const OFFICIAL_CHANNEL_URL = process.env.OFFICIAL_CHANNEL_URL || "https://t.me/o
 const PAYMENT_CHANNEL_URL = process.env.PAYMENT_CHANNEL_URL || "https://t.me/paymentc12";
 const TASK_CHANNEL = process.env.TASK_CHANNEL || "@officialchanelm";
 
+// Public URL of this service (used for Telegram webhook + admin link)
+const BASE_URL = String(
+    process.env.WEBHOOK_BASE_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    'https://rx-mining.onrender.com'
+).trim().replace(/\/+$/, '');
+
 const MIN_WITHDRAW_TRX = 1;
 
 if (!BOT_TOKEN) console.error('❌ BOT_TOKEN environment variable missing!');
@@ -277,23 +284,11 @@ function expireUserPlan(u, now = Date.now(), price = 0) {
 }
 
 // ================== DATABASE ==================
+// NOTE: Data reset code has been REMOVED permanently.
+// User data lives in MongoDB Atlas and is never deleted on deploy/restart.
 mongoose.connect(MONGO_URI)
     .then(async () => {
         console.log('✅ Connected to MongoDB Atlas Successfully!');
-
-        const RESET_KEY = 'data_reset_v2_rx_mining';
-        try {
-            const metaCol = mongoose.connection.collection('meta');
-            const alreadyReset = await metaCol.findOne({ _id: RESET_KEY });
-            if (!alreadyReset) {
-                await mongoose.model('User').deleteMany({});
-                await mongoose.model('PendingRequest').deleteMany({});
-                await metaCol.insertOne({ _id: RESET_KEY, at: Date.now() });
-                console.log('🧹 ALL DATA RESET TO ZERO FOR RX MINING (one-time)!');
-            }
-        } catch (err) {
-            console.log('Reset error:', err);
-        }
 
         try {
             const currentTime = Date.now();
@@ -894,9 +889,8 @@ async function handleWebhookLogic(req, res) {
             } else if (/^\/admin(@\w+)?$/i.test(text.trim())) {
                 const fromId = String((msg.from && msg.from.id) || chatId);
                 if (fromId === ADMIN_ID) {
-                    const baseUrl = String(process.env.RENDER_EXTERNAL_URL || 'https://unitedpay.onrender.com').replace(/\/+$/, '');
                     await sendTelegramMessage(chatId, `👑 <b>RX MINING Admin Access</b>\n\nClick below to open the login page:`, {
-                        inline_keyboard: [[{ text: "🔐 Admin Login Panel", url: `${baseUrl}/admin/login` }]]
+                        inline_keyboard: [[{ text: "🔐 Admin Login Panel", url: `${BASE_URL}/admin/login` }]]
                     });
                 } else {
                     await sendTelegramMessage(chatId, `⛔ <b>Admin only.</b>\nYour Telegram ID: <code>${esc(fromId)}</code>`);
@@ -1792,19 +1786,34 @@ app.get('/api/bot-info', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
-    console.log(`Server running on port ${PORT}`);
-    const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
-    if (RENDER_URL && BOT_TOKEN) {
+// ================== START SERVER + SET TELEGRAM WEBHOOK ==================
+async function setTelegramWebhook() {
+    if (!BOT_TOKEN) {
+        console.log('❌ BOT_TOKEN missing - webhook NOT set');
+        return;
+    }
+    const hookUrl = `${BASE_URL}/api/webhook/${BOT_TOKEN}`;
+    for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-            await tgCall('setWebhook', {
-                url: `${RENDER_URL}/api/webhook/${BOT_TOKEN}`,
+            const r = await tgCall('setWebhook', {
+                url: hookUrl,
                 allowed_updates: ['message', 'callback_query']
             });
-            console.log("Telegram Webhook Set Successfully!");
+            if (r && r.ok) {
+                console.log(`✅ Telegram Webhook Set Successfully! (${BASE_URL}/api/webhook/<token>)`);
+                return;
+            }
+            console.log(`❌ setWebhook failed (try ${attempt}):`, r && r.description);
         } catch (e) {
-            console.log("Failed to set webhook:", e);
+            console.log(`❌ setWebhook error (try ${attempt}):`, e && e.message);
         }
+        await new Promise(r => setTimeout(r, 3000));
     }
+    console.log('❌ Webhook could not be set after 3 tries. Check BOT_TOKEN and BASE_URL:', BASE_URL);
+}
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    setTelegramWebhook();
 });
