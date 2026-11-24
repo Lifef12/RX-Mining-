@@ -63,9 +63,33 @@ function esc(s) {
 }
 function validId(id) { return /^\d{1,20}$/.test(String(id || '')); }
 
+const REQUIRE_TG_AUTH = process.env.REQUIRE_TG_AUTH !== '0';
+
+function verifyInitData(initData, expectedId) {
+    try {
+        if (!initData || !BOT_TOKEN) return false;
+        const params = new URLSearchParams(String(initData));
+        const hash = params.get('hash');
+        if (!hash) return false;
+        params.delete('hash');
+        const dcs = Array.from(params.entries()).map(function (e) { return e[0] + '=' + e[1]; }).sort().join('\n');
+        const secret = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+        const calc = crypto.createHmac('sha256', secret).update(dcs).digest('hex');
+        const a = Buffer.from(calc), b = Buffer.from(String(hash));
+        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+        const authDate = Number(params.get('auth_date')) * 1000;
+        if (!(authDate > 0) || Date.now() - authDate > 7 * 24 * 60 * 60 * 1000) return false;
+        const user = JSON.parse(params.get('user') || '{}');
+        return String(user.id) === String(expectedId);
+    } catch (e) { return false; }
+}
+
 function requireTg(req, res, next) {
     const uid = String((req.body && req.body.userId) || (req.params && req.params.userId) || (req.query && req.query.userId) || '');
     if (!validId(uid)) return res.status(400).json({ success: false, message: 'Invalid user id' });
+    if (REQUIRE_TG_AUTH && !verifyInitData(req.headers['x-tg-init-data'], uid)) {
+        return res.status(401).json({ success: false, message: 'Please open the app from Telegram.' });
+    }
     req.tgId = uid;
     const nm = req.body && req.body.username;
     req.tgName = nm && String(nm).length < 80 ? String(nm) : 'Miner';
@@ -213,9 +237,9 @@ async function getCoinPriceUsd(sym) {
     return 0;
 }
 
+// Internal balance unit is USDT (1 unit = $1). Name kept for compatibility.
 async function getTrxPrice() {
-    const p = await getCoinPriceUsd('TRX');
-    return p > 0 ? p : 0.33;
+    return 1;
 }
 
 function isPaidPlanActive(u, now = Date.now()) {
@@ -223,8 +247,7 @@ function isPaidPlanActive(u, now = Date.now()) {
 }
 
 function trxPriceSync() {
-    const c = priceCache['TRX'];
-    return (c && c.price > 0) ? c.price : 0.33;
+    return 1;
 }
 
 function dailyUsdRate(u, now = Date.now()) {
@@ -1105,7 +1128,7 @@ app.get('/admin/dashboard', checkAdminAuth, async (req, res) => {
             </div>
 
             <div style="background: #1c1917; border: 1px solid #292524; border-radius: 10px; padding: 10px 15px; margin-bottom: 15px; font-size: 13px; color: #f0b94d; display: flex; justify-content: space-between; align-items: center;">
-                <span>📈 <b>Live TRX Price:</b> $${liveTrxPrice.toFixed(4)} USDT</span>
+                <span>📈 <b>Balance Rate:</b> 1 USDT = $${liveTrxPrice.toFixed(2)}</span>
                 <span style="font-size: 11px; color: #a8a29e;">Auto-updated</span>
             </div>
 
@@ -1403,19 +1426,20 @@ async function getTeamStats(user) {
     if (allIds.length) {
         const docs = await User.find({ id: { $in: allIds } }, 'id deposits withdrawals');
         docs.forEach(function (d) {
-            let dep = 0, hasDep = false, hasWd = false;
+            let dep = 0, wd = 0, hasDep = false, hasWd = false;
             (d.deposits || []).forEach(function (x) { if (x.status === 'PAID') { hasDep = true; dep += Number(x.usdtAmount) || 0; } });
-            (d.withdrawals || []).forEach(function (x) { if (x.status === 'PAID') hasWd = true; });
-            info[d.id] = { dep: dep, hasDep: hasDep, hasWd: hasWd };
+            (d.withdrawals || []).forEach(function (x) { if (x.status === 'PAID') { hasWd = true; wd += Number(x.usdValue) || Number(x.amount) || 0; } });
+            info[d.id] = { dep: dep, wd: wd, hasDep: hasDep, hasWd: hasWd };
         });
     }
-    const out = { registered: [0, 0, 0], active: [0, 0, 0], depositsUsd: 0, firstDeposits: 0, firstWithdrawals: 0 };
+    const out = { registered: [0, 0, 0], active: [0, 0, 0], depositsUsd: 0, withdrawalsUsd: 0, firstDeposits: 0, firstWithdrawals: 0 };
     idsByLevel.forEach(function (ids, i) {
         ids.forEach(function (id) {
             out.registered[i]++;
             const x = info[id];
             if (!x) return;
             out.depositsUsd += x.dep;
+            out.withdrawalsUsd += x.wd || 0;
             if (x.hasDep) { out.active[i]++; out.firstDeposits++; }
             if (x.hasWd) out.firstWithdrawals++;
         });
@@ -1508,7 +1532,7 @@ app.get('/api/quote', async (req, res) => {
     const trx = parseFloat(req.query.trx);
     if (trx > 0) {
         out.usdValue = trx * trxPrice;
-        out.coinAmount = sym === 'TRX' ? trx : roundCoin(out.usdValue / price, sym);
+        out.coinAmount = roundCoin(out.usdValue / price, sym);
     }
     res.json(out);
 });
@@ -1682,7 +1706,7 @@ app.post('/api/withdraw', requireTg, async (req, res) => {
     } else {
         const typed = parseFloat(amount);
         if (!(typed > 0)) return res.status(400).json({ success: false, message: "Invalid withdrawal amount" });
-        trxAmt = sym === 'TRX' ? typed : (typed * coinPrice) / trxPrice;
+        trxAmt = (typed * coinPrice) / trxPrice;
     }
     trxAmt = Number(trxAmt.toFixed(8));
     if (!(trxAmt > 0)) return res.status(400).json({ success: false, message: "Invalid withdrawal amount" });
@@ -1691,7 +1715,7 @@ app.post('/api/withdraw', requireTg, async (req, res) => {
     }
 
     const usdValue = trxAmt * trxPrice;
-    const coinAmount = sym === 'TRX' ? roundCoin(trxAmt, 'TRX') : roundCoin(usdValue / coinPrice, sym);
+    const coinAmount = roundCoin(usdValue / coinPrice, sym);
     const amountStr = `${fmtCoin(coinAmount, sym)} ${sym}`;
 
     let u = await User.findOne({ id: userId });
