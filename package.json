@@ -1,1 +1,17 @@
-
+{
+  "name": "rx-mining-bot",
+  "version": "1.0.0",
+  "description": "RX MINING - Telegram Mini App backend",
+  "main": "service.js",
+  "scripts": {
+    "start": "node service.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^7.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
