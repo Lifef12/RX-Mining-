@@ -771,7 +771,6 @@ async function closeRequest(reqDoc, u, reqId) {
 async function postToPaymentChannel(reqDoc, u) {
     try {
         if (!PAYMENT_POST_CHAT) return;
-        const name = esc(reqDoc.username || (u && u.username) || 'Miner');
         const coin = esc(reqDoc.coin || reqDoc.coinSymbol || 'USDT (BEP-20)');
         const amount = esc(reqAmountLabel(reqDoc));
         let text;
@@ -779,7 +778,6 @@ async function postToPaymentChannel(reqDoc, u) {
             text =
 `📥 <b>RX Mining | New Deposit Approved</b>
 
-👤 User: <b>${name}</b>
 🆔 ID: "${esc(reqDoc.userId)}"
 
 🪙 Coin: <b>${coin}</b>
@@ -794,7 +792,6 @@ async function postToPaymentChannel(reqDoc, u) {
             text =
 `🎉 <b>RX Mining | New Withdraw Processed!</b>
 
-👤 User: <b>${name}</b>
 🆔 ID: "${esc(reqDoc.userId)}"
 
 🪙 Coin: <b>${coin}</b>
