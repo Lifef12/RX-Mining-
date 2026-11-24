@@ -1817,7 +1817,20 @@ async function setTelegramWebhook() {
         return;
     }
     const hookUrl = `${BASE_URL}/api/webhook/${BOT_TOKEN}`;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    // Already set correctly? Then do nothing (avoids Telegram "Too Many Requests")
+    try {
+        const info = await tgCall('getWebhookInfo', {});
+        if (info && info.ok && info.result && info.result.url === hookUrl) {
+            console.log('✅ Telegram Webhook already set correctly. Skipping.');
+            return;
+        }
+    } catch (e) {
+        console.log('getWebhookInfo error:', e && e.message);
+    }
+
+    for (let attempt = 1; attempt <= 6; attempt++) {
         try {
             const r = await tgCall('setWebhook', {
                 url: hookUrl,
@@ -1827,13 +1840,19 @@ async function setTelegramWebhook() {
                 console.log(`✅ Telegram Webhook Set Successfully! (${BASE_URL}/api/webhook/<token>)`);
                 return;
             }
+            const wait = Number(r && r.parameters && r.parameters.retry_after);
             console.log(`❌ setWebhook failed (try ${attempt}):`, r && r.description);
+            if (wait > 0) {
+                console.log(`⏳ Waiting ${wait + 2}s as Telegram asked...`);
+                await sleep((wait + 2) * 1000);
+                continue;
+            }
         } catch (e) {
             console.log(`❌ setWebhook error (try ${attempt}):`, e && e.message);
         }
-        await new Promise(r => setTimeout(r, 3000));
+        await sleep(5000);
     }
-    console.log('❌ Webhook could not be set after 3 tries. Check BOT_TOKEN and BASE_URL:', BASE_URL);
+    console.log('❌ Webhook could not be set. Check BOT_TOKEN and BASE_URL:', BASE_URL);
 }
 
 const PORT = process.env.PORT || 3000;
